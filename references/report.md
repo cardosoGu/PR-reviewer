@@ -1,6 +1,8 @@
 # REPORT — Output Format
 
-**Goal:** Emit phased progress during execution and a clear final report in the **user's conversation language**.
+**Goal:** Emit phased progress during execution and a clear final report in the **user's conversation language**, with **RC** on every finding.
+
+**Completion criterion:** Full report emitted; every finding in all sections has an RC line.
 
 ---
 
@@ -17,6 +19,48 @@ Display these five phase markers during the workflow (from respective reference 
 ```
 
 Language: match the user's language (Portuguese if user writes in Portuguese, English if in English).
+
+---
+
+## RC — Review Comment (mandatory)
+
+Every finding in **Problemas bloqueantes**, **Ressalvas**, and **Sugestões** must include one **RC** line — short, PR-ready, collaborative tone.
+
+### Template (strict)
+
+**Portuguese:**
+
+```
+RC: Parece que [observação concreta com símbolo/path/classe], poderia verificar por favor?
+```
+
+Variant: `por gentileza` instead of `por favor` — either is fine.
+
+**English:**
+
+```
+RC: It looks like [concrete observation with symbol/path/class] — could you verify please?
+```
+
+### RC rules
+
+| Rule | Detail |
+| ---- | ------ |
+| Length | 1–2 sentences, ~15–40 words |
+| Tone | Question, not accusation — "Parece que…" / "It looks like…" |
+| Content | Name symbol, import, path, extends/implements, or duplicate relationship |
+| `[Incerto]` | "Parece que… poderia confirmar se…?" / "It looks like… could you confirm whether…?" |
+| Distinct from | "Por que…" / "Sugestão" stay technical; RC is what you paste on the PR |
+
+### RC examples
+
+```
+RC: Parece que esse objeto importado não existe em `globals/MongoDB`, poderia verificar por favor?
+
+RC: O plugin `aggregatePaginate` já é aplicado em `baseSchema`, que `RankingGoalsSchemaClass` estende — poderia verificar se é necessário aplicar novamente?
+
+RC: Parece que `ProposalSituationRecordsErros` importado não existe em `ProposalSituationRecords/ProposalSituationRecords`, poderia verificar por gentileza?
+```
 
 ---
 
@@ -43,6 +87,7 @@ Branch: [current] → base: [base] ([M] commits, [F] arquivos)
 
 Por que é bloqueante: [explicação]
 Sugestão: [correção]
+RC: Parece que …, poderia verificar por favor?
 
 ---
 
@@ -50,16 +95,25 @@ Sugestão: [correção]
 
 ### [arquivo:linha] Título curto
 
+\`\`\`
+[código]
+\`\`\`
+
 [explicação]
 Sugestão: [melhoria]
+RC: Parece que …, poderia verificar por favor?
 
 ---
 
 ## Sugestões (opcional)
 
-- [sugestão 1]
-- [sugestão 2]
+### [arquivo:linha] Título curto
+
+[explicação]
+RC: Parece que …, poderia verificar por favor?
 ```
+
+For suggestion-only items without a code block, RC is still mandatory.
 
 ---
 
@@ -97,12 +151,13 @@ Veredito: Reprovado
 
 ## Formatting Rules
 
-1. **Objective** — every issue tied to file:line and code snippet
-2. **No speculation** — use `[Incerto]` when unsure
-3. **Separate sections** — bloqueantes, ressalvas, sugestões never mixed
-4. **Counters in header** — quick overview
-5. **Plain text friendly** — readable in terminal/chat without complex formatting
-6. **Large PRs** — group findings by file within each section
+1. **Objective** — every issue tied to file:line and code snippet (when applicable)
+2. **RC always** — no finding without RC
+3. **No speculation** — use `[Incerto]` when unsure
+4. **Separate sections** — bloqueantes, ressalvas, sugestões never mixed
+5. **Counters in header** — quick overview
+6. **Plain text friendly** — readable in terminal/chat without complex formatting
+7. **Large PRs** — group findings by file within each section
 
 ---
 

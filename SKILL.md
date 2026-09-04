@@ -2,14 +2,15 @@
 name: diffs-reviewer
 description: >-
   PR review local read-only da branch atual contra a base. Verifica TypeScript
-  (TSC no diff), lógica, segurança e padrões do repo (docs + inferência
-  conservadora). Veredito Aprovado / Aprovado com ressalvas / Reprovado.
-  Use quando o usuário pedir revisar PR, review de código, analisar diff ou
-  /diffs-reviewer. Apenas comandos git read-only; não altera arquivos.
+  (TSC diff-scoped), lógica, segurança, over-engineering e padrões do repo
+  (docs + inferência conservadora). Cada achado inclui RC pronto para PR.
+  Veredito Aprovado / Aprovado com ressalvas / Reprovado. Use quando o usuário
+  pedir revisar PR, review de código, analisar diff ou /diffs-reviewer. Apenas
+  comandos git read-only; não altera arquivos.
 disable-model-invocation: true
 metadata:
   author: cardo
-  version: 2.0.0
+  version: 2.1.0
 ---
 
 # Diffs Reviewer
@@ -35,24 +36,40 @@ Review local read-only focado em problemas de alta relevância. Analisa o diff d
 4. **Blockers → Reprovado** — never "Aprovado com ressalvas" when a blocking issue exists.
 5. **Do not invent rules** — documented standards override inference; inference requires 3+ consistent occurrences.
 6. **Do not speculate** — if uncertain, mark as uncertain; prefer omission over false positives.
+7. **RC on every finding** — short PR-ready comment per [report.md](references/report.md).
+8. **Over-engineering** — mandatory checklist in every file per [analyze.md](references/analyze.md) §2.6.
+9. **No early exit** — review all files in the diff even after blockers are found.
+10. **TSC diff-scoped only** — never full-project `tsc` as default (see [analyze.md](references/analyze.md)).
 
-## Auto-Sizing
+## Scope and Trigger
 
-| Scope    | Files | Diff lines | v1 execution                          |
-| -------- | ----- | ---------- | ------------------------------------- |
-| Small    | ≤3    | ≤100       | Full workflow, single agent, inline  |
-| Medium   | 4–10  | ≤500       | Full workflow, single agent           |
-| Large    | 11+   | >500       | Full workflow, single agent + note that v2 sub-agents are available |
+After FETCH, classify **scope** and compute **trigger** (see [fetch-diff.md](references/fetch-diff.md)):
 
-**v1:** always single agent. For Large scope, mention that parallel sub-agents are planned (see [sub-agents.md](references/sub-agents.md)).
+| Scope  | Files | Diff lines | Execution |
+| ------ | ----- | ---------- | --------- |
+| Small  | ≤3    | ≤100       | Single agent; TSC inline; STANDARDS light (1 peer/module) |
+| Medium | 4–10  | ≤500       | Single agent; TSC sub-agent if trigger ON |
+| Large  | 11+   | >500       | Trigger ON; hunks per file; offer ANALYZE workers |
+
+**Trigger ON** when any of:
+
+```
+(files > 8 AND diff_lines > 400)
+OR files > 12
+OR diff_lines > 800
+```
+
+When trigger ON: spawn **TSC sub-agent automatically** (parallel with STANDARDS). See [sub-agents.md](references/sub-agents.md).
+
+**ANALYZE workers** (file batches): offer-then-confirm only — never auto-spawn. User must accept.
 
 ## Workflow
 
-1. **FETCH** — Read [fetch-diff.md](references/fetch-diff.md). Obtain diff and file list.
-2. **STANDARDS** — Read [standards.md](references/standards.md). Load documented rules + infer conventions.
-3. **ANALYZE** — Read [analyze.md](references/analyze.md). Review each changed file (logic, security, TSC).
+1. **FETCH** — Read [fetch-diff.md](references/fetch-diff.md). Obtain diff, file list, scope, trigger.
+2. **STANDARDS** — Read [standards.md](references/standards.md). Load documented rules + infer conventions (peers per module).
+3. **ANALYZE** — Read [analyze.md](references/analyze.md). Review each changed file (logic, security, TSC, over-engineering).
 4. **VERDICT** — Read [verdict.md](references/verdict.md). Classify findings.
-5. **REPORT** — Read [report.md](references/report.md). Emit phased progress + final report.
+5. **REPORT** — Read [report.md](references/report.md). Emit phased progress + final report with RC per finding.
 
 Display progress by **phase** (not per-file). Use the user's conversation language for output.
 
@@ -64,8 +81,9 @@ Display progress by **phase** (not per-file). Use the user's conversation langua
 - `standards.md` — after file list is known
 - `analyze.md` — with diff + standards context
 - `verdict.md` + `report.md` — after analysis complete
+- `sub-agents.md` — when trigger ON or before offering ANALYZE workers
 
-**Never load simultaneously:** `standards.md` + full diff content for Large PRs (>10 files) — process standards first, then analyze file by file.
+**Never load simultaneously:** `standards.md` + full diff content on Large PRs — process standards first, then analyze file by file (hunks only).
 
 ## Commands
 
@@ -78,9 +96,12 @@ Display progress by **phase** (not per-file). Use the user's conversation langua
 
 ## Sub-Agent Delegation
 
-**v1:** not active — single agent only.
+Active when **trigger ON**. Read [sub-agents.md](references/sub-agents.md):
 
-**v2:** documented in [sub-agents.md](references/sub-agents.md) — offer-then-confirm parallel workers for Large PRs.
+- **TSC worker** — auto-spawn in parallel with STANDARDS; compact return only
+- **ANALYZE workers** — offer-then-confirm on Large scope; user must accept
+
+If trigger OFF or user declines workers: single agent runs full workflow.
 
 ## Additional Resources
 

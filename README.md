@@ -4,10 +4,10 @@
 
 **Review de PR local no Cursor — read-only, focado no que importa.**
 
-![Version](https://img.shields.io/badge/version-2.0.0-blue)
+![Version](https://img.shields.io/badge/version-2.1.0-blue)
 ![Cursor](https://img.shields.io/badge/Cursor-Agent%20Skill-000000?logo=cursor&logoColor=white)
 ![Git](https://img.shields.io/badge/git-read--only-F05032?logo=git&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-TSC%20no%20diff-3178C6?logo=typescript&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-TSC%20diff--scoped-3178C6?logo=typescript&logoColor=white)
 
 [Instalar](#instalar) · [Usar](#usar) · [Veredito](#veredito) · [Spec](SPEC.md)
 
@@ -19,20 +19,21 @@ O **diffs-reviewer** é uma skill para o Cursor Agent que realiza **revisão de 
 
 A execução é **estritamente read-only**: não altera arquivos do repositório, não possui integração com GitHub e utiliza apenas comandos Git de leitura (`diff`, `log`, `show`, `status`, `branch`, `remote`).
 
-Ao concluir a análise, a skill emite um **veredito final** — **Aprovado**, **Reprovado** ou **Aprovado com ressalvas** — e, em seguida, apresenta um relatório estruturado com:
+Ao concluir a análise, a skill emite um **veredito final** — **Aprovado**, **Reprovado** ou **Aprovado com ressalvas** — e um relatório com:
 
 - **Problemas bloqueantes** — itens que impedem o merge
 - **Ressalvas** — melhorias relevantes, sem caráter bloqueante
 - **Sugestões** — recomendações opcionais de refinamento
+- **RC** — comentário curto pronto para colar no PR (todo achado)
 
-Cada achado inclui referência ao arquivo, trecho de código, justificativa e sugestão de correção.
+Cada achado inclui referência ao arquivo, trecho de código, justificativa, sugestão de correção e **RC**.
 
 ```mermaid
 flowchart LR
-    A["FETCH<br/>obter diff"] --> B["STANDARDS<br/>padrões do repo"]
-    B --> C["ANALYZE<br/>lógica · TS · segurança"]
+    A["FETCH<br/>diff · scope · trigger"] --> B["STANDARDS<br/>padrões por módulo"]
+    B --> C["ANALYZE<br/>lógica · TS · segurança · OE"]
     C --> D["VERDICT<br/>classificar achados"]
-    D --> E["REPORT<br/>veredito + relatório"]
+    D --> E["REPORT<br/>veredito + RC"]
 ```
 
 
@@ -74,24 +75,44 @@ A branch base é detectada automaticamente (`main` → `master` → default do `
 
 **Regra:** na presença de qualquer bloqueante, o veredito é sempre **Reprovado** — nunca *Aprovado com ressalvas*.
 
+### RC (comentário para PR)
+
+Todo achado inclui uma linha **RC** no formato:
+
+```
+RC: Parece que [observação concreta], poderia verificar por favor?
+```
+
+Tom colaborativo, 1–2 frases, pronto para colar no GitHub. Em conversas em inglês, o template equivalente é usado automaticamente.
+
 ### O que entra no relatório
 
 
 | Seção                     | Descrição                                                                                       |
 | ------------------------- | ----------------------------------------------------------------------------------------------- |
 | **Problemas bloqueantes** | Erros de TypeScript no diff, bugs de lógica, vulnerabilidades graves, risco de perda de dados   |
-| **Ressalvas**             | Inconsistências de padrão, refatorações recomendadas, melhorias relevantes sem impacto imediato |
+| **Ressalvas**             | Over-engineering, inconsistências de padrão, refatorações recomendadas                          |
 | **Sugestões**             | Ajustes opcionais de legibilidade, organização ou performance                                   |
+| **RC**                    | Comentário PR-ready em cada item das três seções acima                                          |
 
 
 ## O que analisa
 
-- **TypeScript** — `tsc --noEmit`, filtrado aos arquivos do diff
+- **TypeScript** — `tsc` diff-scoped (só arquivos do diff), sub-agente automático em PRs grandes
 - **Lógica** — condições incorretas, null unsafe, validações bypassáveis, condições de corrida
 - **Segurança** — injection, XSS, secrets expostos, ausência de autorização
-- **Padrões** — regras documentadas (`.cursor/rules/`, `CONTRIBUTING.md`) e convenções inferidas do módulo (3+ ocorrências)
+- **Padrões** — regras documentadas (`.cursor/rules/`, `CONTRIBUTING.md`) e convenções inferidas por módulo
+- **Over-engineering** — abstração morta, plugin duplicado, middle man, wrapper desnecessário (sempre)
 
-Em PRs de grande porte (11+ arquivos ou 500+ linhas no diff), a skill pode oferecer **sub-agentes paralelos** para acelerar a análise — somente mediante confirmação explícita.
+### Performance adaptativa (v2.1)
+
+| Scope  | Comportamento |
+| ------ | ------------- |
+| Small  | Agente único, TSC inline |
+| Medium | Agente único; TSC sub-agente se trigger ligar |
+| Large  | Hunks por arquivo; TSC sub-agente; workers ANALYZE **mediante confirmação** |
+
+**Trigger** (sub-agente TSC automático): `(files > 8 AND lines > 400) OR files > 12 OR lines > 800`
 
 **Limites e escopo**
 
@@ -99,6 +120,7 @@ Em PRs de grande porte (11+ arquivos ou 500+ linhas no diff), a skill pode ofere
 - Considera apenas commits da branch atual (sem mudanças uncommitted/staged)
 - Sem integração com GitHub (comentários, checks, API)
 - Sem ESLint ou linters automáticos
+- Review completa — sem parar no primeiro bloqueante
 - Detalhes completos em [SPEC.md](SPEC.md)
 
 
