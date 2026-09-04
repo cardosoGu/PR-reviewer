@@ -156,5 +156,5 @@ Emit once when FETCH completes:
 If trigger ON, add:
 
 ```
-Sub-agente TSC será ativado em paralelo com STANDARDS.
+Worker TYPECHECK será ativado em paralelo com STANDARDS.
 ```

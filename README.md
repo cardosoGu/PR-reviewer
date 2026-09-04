@@ -1,44 +1,40 @@
-
-
 # diffs-reviewer
 
-**Review de PR local no Cursor — read-only, focado no que importa.**
-
-![Version](https://img.shields.io/badge/version-2.1.0-blue)
-![Cursor](https://img.shields.io/badge/Cursor-Agent%20Skill-000000?logo=cursor&logoColor=white)
-![Git](https://img.shields.io/badge/git-read--only-F05032?logo=git&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-TSC%20diff--scoped-3178C6?logo=typescript&logoColor=white)
-
-[Instalar](#instalar) · [Usar](#usar) · [Veredito](#veredito) · [Spec](SPEC.md)
+**Skill focada na review de PR local sem integração com o github.**
 
 
 
-## Descrição
+---
 
-O **diffs-reviewer** é uma skill para o Cursor Agent que realiza **revisão de Pull Request local** com base no diff Git entre a branch atual e a branch base (`git diff base...HEAD`).
+Skill para o Cursor Agent que revisa o diff da branch atual contra a base (`git diff base...HEAD`). Roda no repo aberto, usa só comandos git de leitura e **não altera código**.
 
-A execução é **estritamente read-only**: não altera arquivos do repositório, não possui integração com GitHub e utiliza apenas comandos Git de leitura (`diff`, `log`, `show`, `status`, `branch`, `remote`).
-
-Ao concluir a análise, a skill emite um **veredito final** — **Aprovado**, **Reprovado** ou **Aprovado com ressalvas** — e um relatório com:
-
-- **Problemas bloqueantes** — itens que impedem o merge
-- **Ressalvas** — melhorias relevantes, sem caráter bloqueante
-- **Sugestões** — recomendações opcionais de refinamento
-- **RC** — comentário curto pronto para colar no PR (todo achado)
-
-Cada achado inclui referência ao arquivo, trecho de código, justificativa, sugestão de correção e **RC**.
+No final: **veredito** + relatório com comentários **RC** prontos para colar no PR.
 
 ```mermaid
 flowchart LR
-    A["FETCH<br/>diff · scope · trigger"] --> B["STANDARDS<br/>padrões por módulo"]
-    B --> C["ANALYZE<br/>lógica · TS · segurança · OE"]
-    C --> D["VERDICT<br/>classificar achados"]
-    D --> E["REPORT<br/>veredito + RC"]
+    GIT["git diff base...HEAD"] --> A["① FETCH"]
+    A --> B["② STANDARDS"]
+    B --> C["③ ANALYZE"]
+    C --> D["④ VERDICT"]
+    D --> E["⑤ REPORT"]
+    E --> OUT["Veredito + RC"]
 ```
 
+Progresso: `[Fase 1/5]` … `[Fase 5/5]`
 
+---
 
-O progresso é exibido por fases: `[Fase 1/5]` … `[Fase 5/5]`.
+## O que faz
+
+| Fase | Função |
+|------|--------|
+| **FETCH** | Resolve base, obtém diff, classifica tamanho da PR |
+| **STANDARDS** | Carrega regras documentadas + convenções do módulo |
+| **ANALYZE** | Revisa cada arquivo: typecheck, lógica, segurança, over-engineering |
+| **VERDICT** | Classifica achados (bloqueante / ressalva / sugestão) |
+| **REPORT** | Emite veredito e RC em todo achado |
+
+---
 
 ## Instalar
 
@@ -46,84 +42,78 @@ O progresso é exibido por fases: `[Fase 1/5]` … `[Fase 5/5]`.
 git clone https://github.com/cardo/diffs-reviewer.git ~/.cursor/skills/diffs-reviewer
 ```
 
-No Windows, substitua o caminho por `$env:USERPROFILE\.cursor\skills\diffs-reviewer`.
+Windows: `$env:USERPROFILE\.cursor\skills\diffs-reviewer`
 
-Abra o **repositório a ser revisado** no Cursor. A skill é invocada manualmente — não executa automaticamente.
+Abra o **repo a revisar** no Cursor. Invocação **manual** — não roda sozinha.
+
+---
 
 ## Usar
-
-No chat do Cursor:
 
 ```
 /diffs-reviewer
 /diffs-reviewer base=develop
 ```
 
-Gatilhos equivalentes: `Revisar PR` · `review de código` · `analisar diff` · `Revisar só segurança` · `Revisar padrões`
+Também: `Revisar PR` · `review de código` · `analisar diff`
 
-A branch base é detectada automaticamente (`main` → `master` → default do `origin/HEAD`). Use `base=<branch>` para sobrescrever.
+Base auto: `main` → `master` → `origin/HEAD`. Override: `base=<branch>`.
 
-## Veredito
+---
 
+## Output
 
-|     | Resultado                  | Condição                                |
-| --- | -------------------------- | --------------------------------------- |
-| ✅   | **Aprovado**               | Nenhum problema bloqueante              |
-| ⚠️  | **Aprovado com ressalvas** | Sem bloqueantes; ressalvas recomendadas |
-| ❌   | **Reprovado**              | Um ou mais problemas bloqueantes        |
+### Veredito
 
+| | Resultado | Quando |
+|---|---|---|
+| ✅ | **Aprovado** | 0 bloqueantes, 0 ressalvas |
+| ⚠️ | **Aprovado com ressalvas** | 0 bloqueantes, 1+ ressalvas |
+| ❌ | **Reprovado** | 1+ bloqueantes |
 
-**Regra:** na presença de qualquer bloqueante, o veredito é sempre **Reprovado** — nunca *Aprovado com ressalvas*.
+Bloqueante → sempre **Reprovado** (nunca ressalvas).
 
-### RC (comentário para PR)
-
-Todo achado inclui uma linha **RC** no formato:
+### RC
 
 ```
 RC: Parece que [observação concreta], poderia verificar por favor?
 ```
 
-Tom colaborativo, 1–2 frases, pronto para colar no GitHub. Em conversas em inglês, o template equivalente é usado automaticamente.
+Todo achado traz **RC** pronto. Idioma segue a conversa.
 
-### O que entra no relatório
+| Seção | Conteúdo |
+|-------|----------|
+| **Bloqueantes** | Erros de tipo, bugs de lógica, vulnerabilidades |
+| **Ressalvas** | Over-engineering, inconsistência de padrão |
+| **Sugestões** | Melhorias opcionais de legibilidade ou design |
 
-
-| Seção                     | Descrição                                                                                       |
-| ------------------------- | ----------------------------------------------------------------------------------------------- |
-| **Problemas bloqueantes** | Erros de TypeScript no diff, bugs de lógica, vulnerabilidades graves, risco de perda de dados   |
-| **Ressalvas**             | Over-engineering, inconsistências de padrão, refatorações recomendadas                          |
-| **Sugestões**             | Ajustes opcionais de legibilidade, organização ou performance                                   |
-| **RC**                    | Comentário PR-ready em cada item das três seções acima                                          |
-
+---
 
 ## O que analisa
 
-- **TypeScript** — `tsc` diff-scoped (só arquivos do diff), sub-agente automático em PRs grandes
-- **Lógica** — condições incorretas, null unsafe, validações bypassáveis, condições de corrida
-- **Segurança** — injection, XSS, secrets expostos, ausência de autorização
-- **Padrões** — regras documentadas (`.cursor/rules/`, `CONTRIBUTING.md`) e convenções inferidas por módulo
-- **Over-engineering** — abstração morta, plugin duplicado, middle man, wrapper desnecessário (sempre)
+| Eixo | Detecta |
+|------|---------|
+| **TYPECHECK** | Script do projeto → `tsc -p` / `tsc -b` por package |
+| **Lógica** | Condições erradas, null unsafe, race, validação bypassável |
+| **Segurança** | Injection, XSS, secrets, auth ausente |
+| **Padrões** | `.cursor/rules/`, `CONTRIBUTING.md`, convenções do módulo |
+| **Over-engineering** | Abstração morta, plugin duplicado, middle man *(sempre)* |
 
-### Performance adaptativa (v2.1)
+TYPECHECK: **script** → **tsc por package** → **skip** (com nota).
 
-| Scope  | Comportamento |
-| ------ | ------------- |
-| Small  | Agente único, TSC inline |
-| Medium | Agente único; TSC sub-agente se trigger ligar |
-| Large  | Hunks por arquivo; TSC sub-agente; workers ANALYZE **mediante confirmação** |
+---
 
-**Trigger** (sub-agente TSC automático): `(files > 8 AND lines > 400) OR files > 12 OR lines > 800`
+## Escala adaptativa
 
-**Limites e escopo**
+| Scope | PR | Comportamento |
+|-------|-----|---------------|
+| **Small** | ≤3 arquivos, ≤100 linhas | Agente único |
+| **Medium** | 4–10 arquivos | + TYPECHECK worker se trigger ON |
+| **Large** | 11+ ou >500 linhas | Hunks por arquivo + workers ANALYZE *(com confirmação)* |
 
-- Não altera o repositório sob revisão
-- Considera apenas commits da branch atual (sem mudanças uncommitted/staged)
-- Sem integração com GitHub (comentários, checks, API)
-- Sem ESLint ou linters automáticos
-- Review completa — sem parar no primeiro bloqueante
-- Detalhes completos em [SPEC.md](SPEC.md)
+**Trigger:** `(files > 8 AND lines > 400) OR files > 12 OR lines > 800`
 
-
+PRs grandes podem usar workers paralelos (contrato genérico, sem depender de runtime específico).
 
 ---
 

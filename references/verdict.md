@@ -10,7 +10,7 @@
 
 ### Bloqueante (blocks approval → Reprovado)
 
-- TSC/type errors in diff files that break build
+- Type/typecheck errors in diff files that break build
 - Logic bugs with clear functional impact
 - Serious security vulnerabilities
 - Data loss or state corruption risk

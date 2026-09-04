@@ -1,16 +1,16 @@
 ---
 name: diffs-reviewer
 description: >-
-  PR review local read-only da branch atual contra a base. Verifica TypeScript
-  (TSC diff-scoped), lógica, segurança, over-engineering e padrões do repo
-  (docs + inferência conservadora). Cada achado inclui RC pronto para PR.
+  PR review local read-only da branch atual contra a base. TYPECHECK via script
+  do projeto ou tsc por package; lógica, segurança, over-engineering e padrões
+  do repo (docs + inferência conservadora). Cada achado inclui RC pronto para PR.
   Veredito Aprovado / Aprovado com ressalvas / Reprovado. Use quando o usuário
   pedir revisar PR, review de código, analisar diff ou /diffs-reviewer. Apenas
   comandos git read-only; não altera arquivos.
 disable-model-invocation: true
 metadata:
   author: cardo
-  version: 2.1.0
+  version: 1.0.0
 ---
 
 # Diffs Reviewer
@@ -39,7 +39,7 @@ Review local read-only focado em problemas de alta relevância. Analisa o diff d
 7. **RC on every finding** — short PR-ready comment per [report.md](references/report.md).
 8. **Over-engineering** — mandatory checklist in every file per [analyze.md](references/analyze.md) §2.6.
 9. **No early exit** — review all files in the diff even after blockers are found.
-10. **TSC diff-scoped only** — never full-project `tsc` as default (see [analyze.md](references/analyze.md)).
+10. **TYPECHECK** — script do projeto → `tsc -p` / `tsc -b` por package; never `tsc -- file1 file2`; never build as fallback (see [analyze.md](references/analyze.md)).
 
 ## Scope and Trigger
 
@@ -47,8 +47,8 @@ After FETCH, classify **scope** and compute **trigger** (see [fetch-diff.md](ref
 
 | Scope  | Files | Diff lines | Execution |
 | ------ | ----- | ---------- | --------- |
-| Small  | ≤3    | ≤100       | Single agent; TSC inline; STANDARDS light (1 peer/module) |
-| Medium | 4–10  | ≤500       | Single agent; TSC sub-agent if trigger ON |
+| Small  | ≤3    | ≤100       | Single agent; TYPECHECK inline; STANDARDS light (1 peer/module) |
+| Medium | 4–10  | ≤500       | Single agent; TYPECHECK worker if trigger ON |
 | Large  | 11+   | >500       | Trigger ON; hunks per file; offer ANALYZE workers |
 
 **Trigger ON** when any of:
@@ -59,7 +59,7 @@ OR files > 12
 OR diff_lines > 800
 ```
 
-When trigger ON: spawn **TSC sub-agent automatically** (parallel with STANDARDS). See [sub-agents.md](references/sub-agents.md).
+When trigger ON: spawn **TYPECHECK worker automatically** (parallel with STANDARDS). See [sub-agents.md](references/sub-agents.md).
 
 **ANALYZE workers** (file batches): offer-then-confirm only — never auto-spawn. User must accept.
 
@@ -67,7 +67,7 @@ When trigger ON: spawn **TSC sub-agent automatically** (parallel with STANDARDS)
 
 1. **FETCH** — Read [fetch-diff.md](references/fetch-diff.md). Obtain diff, file list, scope, trigger.
 2. **STANDARDS** — Read [standards.md](references/standards.md). Load documented rules + infer conventions (peers per module).
-3. **ANALYZE** — Read [analyze.md](references/analyze.md). Review each changed file (logic, security, TSC, over-engineering).
+3. **ANALYZE** — Read [analyze.md](references/analyze.md). Review each changed file (logic, security, TYPECHECK, over-engineering).
 4. **VERDICT** — Read [verdict.md](references/verdict.md). Classify findings.
 5. **REPORT** — Read [report.md](references/report.md). Emit phased progress + final report with RC per finding.
 
@@ -94,14 +94,14 @@ Display progress by **phase** (not per-file). Use the user's conversation langua
 | Revisar só segurança | Full workflow but emphasize analyze.md security section |
 | Revisar padrões | Full workflow but emphasize standards.md |
 
-## Sub-Agent Delegation
+## Worker Delegation
 
 Active when **trigger ON**. Read [sub-agents.md](references/sub-agents.md):
 
-- **TSC worker** — auto-spawn in parallel with STANDARDS; compact return only
+- **TYPECHECK worker** — auto when typecheck path detected; parallel with STANDARDS; compact return only
 - **ANALYZE workers** — offer-then-confirm on Large scope; user must accept
 
-If trigger OFF or user declines workers: single agent runs full workflow.
+Worker contracts are platform-agnostic (input/output/constraints). If delegation unavailable or trigger OFF: single agent runs full workflow inline.
 
 ## Additional Resources
 

@@ -96,7 +96,7 @@ Produce a compact internal list (~30 lines max):
 - [dimension]: mixed after N peers (file1, file2, ...)
 ```
 
-Do not include this snapshot in the final report unless the user asks — pass it to ANALYZE and sub-agent workers.
+Do not include this snapshot in the final report unless the user asks — pass it to ANALYZE and workers.
 
 ---
 
