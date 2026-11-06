@@ -1,16 +1,18 @@
 ---
 name: diffs-reviewer
 description: >-
-  PR review local read-only da branch atual contra a base. TYPECHECK via script
-  do projeto ou tsc por package; lógica, segurança, over-engineering e padrões
-  do repo (docs + inferência conservadora). Cada achado inclui RC pronto para PR.
-  Veredito Aprovado / Aprovado com ressalvas / Reprovado. Use quando o usuário
-  pedir revisar PR, review de código, analisar diff ou /diffs-reviewer. Apenas
-  comandos git read-only; não altera arquivos.
+  PR review local da branch atual contra origin/<base>. IMPORT-CHECK
+  determinístico (imports/exports inexistentes, arquivos removidos ainda
+  importados); lógica, segurança, over-engineering com evidência e padrões do
+  repo. TYPECHECK opt-in. Cada achado inclui RC pronto para PR. Veredito
+  Aprovado / Aprovado com ressalvas / Reprovado. Use quando o usuário pedir
+  revisar PR, review de código, analisar diff ou /diffs-reviewer. Git
+  read-only (único acesso à rede: git fetch --no-tags origin <base>); não altera
+  arquivos.
 disable-model-invocation: true
 metadata:
   author: cardo
-  version: 1.0.0
+  version: 1.1.0
 ---
 
 # Diffs Reviewer
@@ -30,16 +32,16 @@ Review local read-only focado em problemas de alta relevância. Analisa o diff d
 
 **Execution contract — non-negotiable:**
 
-1. **Read-only** — git: `diff`, `log`, `show`, `status`, `branch`, `remote` only. Never `push`, `commit`, `checkout`, `reset`, `branch -D`, or any state-changing command.
+1. **Read-only** — git: `diff`, `log`, `show`, `status`, `branch`, `remote`, `rev-parse`, `ls-tree`, `grep` only, plus the single network command `git fetch --no-tags origin <base>`. Never `push`, `pull`, `commit`, `checkout`, `reset`, `branch -D`, or any other state-changing command.
 2. **No file edits** in the repository under review.
 3. **Analyze only files in the diff** — read other files for context and patterns only.
 4. **Blockers → Reprovado** — never "Aprovado com ressalvas" when a blocking issue exists.
 5. **Do not invent rules** — documented standards override inference; inference requires 3+ consistent occurrences.
 6. **Do not speculate** — if uncertain, mark as uncertain; prefer omission over false positives.
 7. **RC on every finding** — short PR-ready comment per [report.md](references/report.md).
-8. **Over-engineering** — mandatory checklist in every file per [analyze.md](references/analyze.md) §2.6.
+8. **Over-engineering** — mandatory checklist in every file per [analyze.md](references/analyze.md) §2.6; **no finding without verification evidence**.
 9. **No early exit** — review all files in the diff even after blockers are found.
-10. **TYPECHECK** — script do projeto → `tsc -p` / `tsc -b` por package; never `tsc -- file1 file2`; never build as fallback (see [analyze.md](references/analyze.md)).
+10. **IMPORT-CHECK always, TYPECHECK opt-in** — IMPORT-CHECK ([analyze.md](references/analyze.md) §0) runs on every review; TYPECHECK ([analyze.md](references/analyze.md) §1) only when the user asks, in background with 120s timeout; never `tsc -- file1 file2`; never build as fallback.
 
 ## Scope and Trigger
 
@@ -47,8 +49,8 @@ After FETCH, classify **scope** and compute **trigger** (see [fetch-diff.md](ref
 
 | Scope  | Files | Diff lines | Execution |
 | ------ | ----- | ---------- | --------- |
-| Small  | ≤3    | ≤100       | Single agent; TYPECHECK inline; STANDARDS light (1 peer/module) |
-| Medium | 4–10  | ≤500       | Single agent; TYPECHECK worker if trigger ON |
+| Small  | ≤3    | ≤100       | Single agent; IMPORT-CHECK inline; STANDARDS light (1 peer/module) |
+| Medium | 4–10  | ≤500       | Single agent; IMPORT-CHECK inline |
 | Large  | 11+   | >500       | Trigger ON; hunks per file; offer ANALYZE workers |
 
 **Trigger ON** when any of:
@@ -59,7 +61,7 @@ OR files > 12
 OR diff_lines > 800
 ```
 
-When trigger ON: spawn **TYPECHECK worker automatically** (parallel with STANDARDS). See [sub-agents.md](references/sub-agents.md).
+Trigger ON no longer spawns TYPECHECK automatically. It only drives the ANALYZE-workers offer; the TYPECHECK worker runs only if the user asked for typecheck. See [sub-agents.md](references/sub-agents.md).
 
 **ANALYZE workers** (file batches): offer-then-confirm only — never auto-spawn. User must accept.
 
@@ -67,7 +69,7 @@ When trigger ON: spawn **TYPECHECK worker automatically** (parallel with STANDAR
 
 1. **FETCH** — Read [fetch-diff.md](references/fetch-diff.md). Obtain diff, file list, scope, trigger.
 2. **STANDARDS** — Read [standards.md](references/standards.md). Load documented rules + infer conventions (peers per module).
-3. **ANALYZE** — Read [analyze.md](references/analyze.md). Review each changed file (logic, security, TYPECHECK, over-engineering).
+3. **ANALYZE** — Read [analyze.md](references/analyze.md). Run IMPORT-CHECK (§0), then review each changed file (logic, security, over-engineering with evidence). TYPECHECK (§1) only on request.
 4. **VERDICT** — Read [verdict.md](references/verdict.md). Classify findings.
 5. **REPORT** — Read [report.md](references/report.md). Emit phased progress + final report with RC per finding.
 
@@ -98,7 +100,7 @@ Display progress by **phase** (not per-file). Use the user's conversation langua
 
 Active when **trigger ON**. Read [sub-agents.md](references/sub-agents.md):
 
-- **TYPECHECK worker** — auto when typecheck path detected; parallel with STANDARDS; compact return only
+- **TYPECHECK worker** — only when the user asked for typecheck; compact return only
 - **ANALYZE workers** — offer-then-confirm on Large scope; user must accept
 
 Worker contracts are platform-agnostic (input/output/constraints). If delegation unavailable or trigger OFF: single agent runs full workflow inline.

@@ -100,7 +100,7 @@ git diff <ref>...HEAD --name-status -M --no-color
 git log <ref>..HEAD --oneline
 ```
 
-`--name-status -M` feeds the IMPORT-CHECK reverse check (deleted/renamed files).
+`--name-status -M` feeds the IMPORT-CHECK reverse check (analyze.md §0) (deleted/renamed files).
 
 Count **diff_lines** from the full diff output (added + removed lines, excluding headers).
 

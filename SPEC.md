@@ -1,4 +1,4 @@
-# Spec: diffs-reviewer v1
+# Spec: diffs-reviewer v1.1
 
 ## Problem Statement
 
@@ -19,6 +19,15 @@ Skill modular com execução adaptativa:
 - Veredito: bloqueantes = Reprovado; ressalvas = melhorias não-bloqueantes
 - **Sem early exit** — review completa mesmo após bloqueantes
 - Workers ativos quando trigger ON (contrato platform-agnostic)
+
+## v1.1 changes
+
+Spec de design completa: `Specs-Cardoso/skills/diffs-reviewer/2026-11-06-diffs-reviewer-v1.1-design.md`.
+
+- **IMPORT-CHECK** determinístico sempre ligado (analyze.md §0): resolve imports contra HEAD, valida exports nomeados, checa arquivos deletados/renomeados ainda importados e pacotes novos.
+- **TYPECHECK opt-in**: nunca automático; sob pedido, em background, timeout 120s.
+- **Over-engineering com verificação ativa**: cada sinal exige "como confirmar"; sem evidência, sem achado.
+- **Fluxo git**: compara com `origin/<base>`; único comando de rede é `git fetch --no-tags origin <base>`.
 
 ## Decisions Log
 
@@ -41,20 +50,28 @@ Skill modular com execução adaptativa:
 | Idioma output | Idioma do usuário | v1 |
 | Progresso | Por fases (1/5 … 5/5) | v1 |
 | Local | `~/.cursor/skills/diffs-reviewer/` | v1 |
+| TYPECHECK | Opt-in; background; timeout 120s (substitui auto quando trigger ON) | v1.1 |
+| Import verification | IMPORT-CHECK determinístico sempre ligado, sem checkout | v1.1 |
+| Over-engineering | Verificação ativa por sinal; sem evidência, sem achado | v1.1 |
+| Base de comparação | `origin/<base>` + `git fetch --no-tags origin <base>` restrito | v1.1 |
+| gh | Descartado (superfície de escrita no GitHub) | v1.1 |
 
 ## Canonical Rules (must not contradict)
 
 These rules are law. Reference files must align; if conflict, SPEC wins.
 
-1. **TYPECHECK:** script do projeto first; then `tsc -p` (single package) or `tsc -b` (monorepo package); never `tsc -- file1 file2`; never build as automatic fallback.
+1. **TYPECHECK:** never automatic; on request only, background, 120s timeout; script do projeto first, then `tsc -p` / `tsc -b`; never `tsc -- file1 file2`; never build as automatic fallback.
 2. **Diff:** Large PR → hunks per file; never STANDARDS + full diff simultaneously.
-3. **TYPECHECK worker:** auto only when trigger ON + typecheck path; compact return (no raw log).
+3. **TYPECHECK worker:** only when the user asked for typecheck; compact return (no raw log).
 4. **ANALYZE workers:** never auto — always offer-then-confirm; platform-agnostic contract.
 5. **Peers:** per module; baseline 1–2; max 7; expand only if dimension ambiguous.
 6. **RC:** mandatory on every finding; strict template; user's language.
 7. **Over-engineering:** checklist on every file; graduated severity (see verdict.md).
 8. **Review:** no early exit — all diff files analyzed.
 9. **Bloqueante:** functional/security/typecheck impact only — never style-only OE.
+10. **IMPORT-CHECK:** always on, all scopes, no checkout; broken import/export/orphan importer → Bloqueante; ambiguity → `[Incerto]`.
+11. **Git:** only network command is `git fetch --no-tags origin <base>`; comparison uses `origin/<base>` when it exists.
+12. **Over-engineering:** no finding without verification evidence.
 
 ## File Structure
 
@@ -83,6 +100,7 @@ diffs-reviewer/
 ## Out of Scope
 
 - Integração GitHub
+- Integração gh (descartada em v1.1)
 - ESLint automático
 - Regras de domínio
 - Cache de padrões entre execuções
@@ -117,3 +135,20 @@ diffs-reviewer/
 - [ ] Progresso por fases exibido
 - [ ] Idioma segue usuário (RC PT ou EN)
 - [ ] ANALYZE workers: pergunta antes; declina → sequencial
+- [ ] Import relativo inexistente → Bloqueante + RC com evidência
+- [ ] Import com alias de `tsconfig.paths` resolvido corretamente (existente e inexistente)
+- [ ] Convenção ESM `./x.js` resolve para `x.ts`
+- [ ] Export nomeado inexistente em módulo local → Bloqueante
+- [ ] `export *` encadeado / resolução ambígua → `[Incerto]`, não Bloqueante
+- [ ] Arquivo deletado ainda importado → Reprovado com lista de importadores
+- [ ] Pacote externo novo ausente do `package.json` → achado
+- [ ] Monorepo: alias e `package.json` do package correto
+- [ ] TYPECHECK não roda por padrão; relatório mostra `não solicitado`
+- [ ] TYPECHECK solicitado: roda em background; estouro de 120s gera aviso e review continua
+- [ ] `origin/<base>` usada quando existe; fallback para base local sem remoto
+- [ ] Fetch falha (offline) → aviso de ref possivelmente velha, review prossegue
+- [ ] Nenhum `pull`/`checkout`/`fetch` fora de `git fetch --no-tags origin <base>`
+- [ ] Dead code: export novo sem referências → Ressalva com grep no RC
+- [ ] Duplicated infra: plugin já na base → Ressalva com trecho da base
+- [ ] Sinal de OE sem confirmação → não reportado
+- [ ] Repo grande: greps restritos ao módulo, review conclui em tempo razoável
