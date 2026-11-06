@@ -10,6 +10,8 @@
 
 ### 1. Resolve base branch
 
+**Base name `<base>`:** always the bare branch name (e.g. `main`, never `origin/main`). Strip any `origin/` prefix from `symbolic-ref` or `branch -r` output.
+
 **Override (soft):** If the user explicitly mentions a base branch (e.g. `base=develop`, `branch base: main`, `comparar com jobs`), use it.
 
 **Auto-detect (default):** Try in order until one resolves:
@@ -30,32 +32,47 @@ If that fails, try:
 git branch -r
 ```
 
-Look for `origin/HEAD -> origin/main` or `origin/master`.
+Look for `origin/HEAD -> origin/main` or `origin/master`, and keep only `main` / `master` as `<base>`.
 
-**Verify:** `git rev-parse <base>` must succeed.
+**Freshness — fetch first (the only network command allowed):**
 
-**Prefer the remote ref (no manual pull needed):**
+Check whether an `origin` remote exists:
+
+```bash
+git remote
+```
+
+- If `origin` is listed, run:
+
+  ```bash
+  git fetch --no-tags origin <base>
+  ```
+
+  Rules: exactly one branch, only `origin`, never `--all`, `--prune`, `--tags`. It updates only the remote-tracking ref; it does not touch the working tree, index, or local branches.
+
+  If the fetch fails (offline, auth), continue and emit once:
+
+  ```
+  Aviso: origin/<base> pode estar desatualizada (fetch falhou).
+  ```
+
+- If there is no `origin` remote, skip the fetch and emit no warning.
+
+**Resolve `<ref>` (only after the fetch):**
 
 ```bash
 git rev-parse --verify --quiet origin/<base>
 ```
 
 - If it succeeds, set `<ref>` = `origin/<base>` and use `<ref>` in **every** command below.
-- If it fails (no remote), set `<ref>` = `<base>` and note "sem remoto: usando base local".
+- Otherwise:
 
-**Freshness — the only network command allowed:**
+  ```bash
+  git rev-parse --verify --quiet <base>
+  ```
 
-```bash
-git fetch origin <base>
-```
-
-Rules: exactly one branch, only `origin`, never `--all`, `--prune`, `--tags`. It updates only the remote-tracking ref; it does not touch the working tree, index, or local branches.
-
-If the fetch fails (offline, auth), continue with the existing `<ref>` and emit once:
-
-```
-Aviso: origin/<base> pode estar desatualizada (fetch falhou).
-```
+  - If it succeeds, set `<ref>` = `<base>` and note "sem remoto: usando base local".
+  - If it fails too, stop and tell the user the base `<base>` was not found (neither `origin/<base>` nor `<base>` resolves).
 
 ### 2. Check current branch
 
@@ -63,7 +80,7 @@ Aviso: origin/<base> pode estar desatualizada (fetch falhou).
 git branch --show-current
 ```
 
-If current branch is `main` or `master` (same as base), stop and tell the user there is no feature diff to review against itself.
+If current branch equals `<base>` (bare name), stop and tell the user there is no feature diff to review against itself.
 
 ### 3. Obtain diff (three-dot, merge-base)
 
@@ -83,7 +100,7 @@ git diff <ref>...HEAD --name-status -M --no-color
 git log <ref>..HEAD --oneline
 ```
 
-(`--name-status -M` é novo: alimenta a checagem inversa de deletados/renomeados da Task 2.)
+`--name-status -M` feeds the IMPORT-CHECK reverse check (deleted/renamed files).
 
 Count **diff_lines** from the full diff output (added + removed lines, excluding headers).
 
@@ -162,7 +179,10 @@ Do **not** pass full diff text into STANDARDS on Large PRs.
 | `git rev-parse <ref>` | Verify ref exists |
 | `git symbolic-ref refs/remotes/origin/HEAD` | Default remote branch |
 | `git branch -r` | List remote branches |
-| `git fetch origin <base>` | **Only** network command: refresh the remote-tracking ref of the base |
+| `git remote` | Check that an `origin` remote exists |
+| `git rev-parse --verify --quiet <ref>` | Resolve ref (no error output when missing) |
+| `git rev-parse --short <ref>` | Short sha for the progress message |
+| `git fetch --no-tags origin <base>` | **Only** network command: refresh the remote-tracking ref of the base |
 | `git diff <ref>...HEAD` | Diff content |
 | `git diff <ref>...HEAD --name-only` | Changed files |
 | `git diff <ref>...HEAD --name-status -M` | Added/deleted/renamed files |
@@ -175,7 +195,7 @@ Do **not** pass full diff text into STANDARDS on Large PRs.
 
 ## Forbidden Git Commands
 
-`push`, `pull`, `commit`, `checkout`, `switch`, `reset`, `rebase`, `merge`, `branch -D`, `stash`, `clean`, and any `fetch` other than `git fetch origin <base>`.
+`push`, `pull`, `commit`, `checkout`, `switch`, `reset`, `rebase`, `merge`, `branch -D`, `stash`, `clean`, and any `fetch` other than `git fetch --no-tags origin <base>`.
 
 ---
 
@@ -187,4 +207,4 @@ Emit once when FETCH completes:
 [Fase 1/5] FETCH — diff obtido: <N> arquivos, <L> linhas vs origin/<base>@<sha curto> (<scope>, trigger <ON|OFF>)
 ```
 
-(Se `<ref>` for a base local, usar `<base>@<sha curto>`.)
+(`<sha curto>` = `git rev-parse --short <ref>`. Se `<ref>` for a base local, usar `<base>@<sha curto>`.)
