@@ -34,6 +34,29 @@ Look for `origin/HEAD -> origin/main` or `origin/master`.
 
 **Verify:** `git rev-parse <base>` must succeed.
 
+**Prefer the remote ref (no manual pull needed):**
+
+```bash
+git rev-parse --verify --quiet origin/<base>
+```
+
+- If it succeeds, set `<ref>` = `origin/<base>` and use `<ref>` in **every** command below.
+- If it fails (no remote), set `<ref>` = `<base>` and note "sem remoto: usando base local".
+
+**Freshness — the only network command allowed:**
+
+```bash
+git fetch origin <base>
+```
+
+Rules: exactly one branch, only `origin`, never `--all`, `--prune`, `--tags`. It updates only the remote-tracking ref; it does not touch the working tree, index, or local branches.
+
+If the fetch fails (offline, auth), continue with the existing `<ref>` and emit once:
+
+```
+Aviso: origin/<base> pode estar desatualizada (fetch falhou).
+```
+
 ### 2. Check current branch
 
 ```bash
@@ -45,16 +68,22 @@ If current branch is `main` or `master` (same as base), stop and tell the user t
 ### 3. Obtain diff (three-dot, merge-base)
 
 ```bash
-git diff <base>...HEAD --no-color
+git diff <ref>...HEAD --no-color
 ```
 
 ```bash
-git diff <base>...HEAD --name-only --no-color
+git diff <ref>...HEAD --name-only --no-color
 ```
 
 ```bash
-git log <base>..HEAD --oneline
+git diff <ref>...HEAD --name-status -M --no-color
 ```
+
+```bash
+git log <ref>..HEAD --oneline
+```
+
+(`--name-status -M` é novo: alimenta a checagem inversa de deletados/renomeados da Task 2.)
 
 Count **diff_lines** from the full diff output (added + removed lines, excluding headers).
 
@@ -105,7 +134,7 @@ Pass `scope`, `trigger`, `file_count`, and `diff_lines` to all later phases.
 For hunks per file:
 
 ```bash
-git diff <base>...HEAD --no-color -- <file>
+git diff <ref>...HEAD --no-color -- <file>
 ```
 
 Read each file's hunks during ANALYZE only — do not accumulate full diff in context during STANDARDS.
@@ -114,7 +143,7 @@ Read each file's hunks during ANALYZE only — do not accumulate full diff in co
 
 Pass forward:
 
-- Base branch name
+- Base branch name and `<ref>` (with short sha of `<ref>`)
 - Current branch name
 - Commit list (one-liners)
 - Filtered file list
@@ -133,15 +162,20 @@ Do **not** pass full diff text into STANDARDS on Large PRs.
 | `git rev-parse <ref>` | Verify ref exists |
 | `git symbolic-ref refs/remotes/origin/HEAD` | Default remote branch |
 | `git branch -r` | List remote branches |
-| `git diff <base>...HEAD` | Diff content |
-| `git diff <base>...HEAD --name-only` | Changed files |
-| `git diff <base>...HEAD -- <file>` | Per-file hunks |
-| `git log <base>..HEAD --oneline` | Commits in branch |
+| `git fetch origin <base>` | **Only** network command: refresh the remote-tracking ref of the base |
+| `git diff <ref>...HEAD` | Diff content |
+| `git diff <ref>...HEAD --name-only` | Changed files |
+| `git diff <ref>...HEAD --name-status -M` | Added/deleted/renamed files |
+| `git diff <ref>...HEAD -- <file>` | Per-file hunks |
+| `git log <ref>..HEAD --oneline` | Commits in branch |
+| `git ls-tree -r --name-only HEAD` | File existence at HEAD (IMPORT-CHECK) |
+| `git grep … HEAD -- <path>` | Reference/export search at HEAD (IMPORT-CHECK, over-engineering) |
+| `git show HEAD:<path>` | Read a file at HEAD without checkout |
 | `git show`, `git status` | Context when needed |
 
 ## Forbidden Git Commands
 
-`push`, `commit`, `checkout`, `switch`, `reset`, `rebase`, `merge`, `branch -D`, `stash`, `clean`, `fetch` (read-only without network side effects)
+`push`, `pull`, `commit`, `checkout`, `switch`, `reset`, `rebase`, `merge`, `branch -D`, `stash`, `clean`, and any `fetch` other than `git fetch origin <base>`.
 
 ---
 
@@ -150,11 +184,7 @@ Do **not** pass full diff text into STANDARDS on Large PRs.
 Emit once when FETCH completes:
 
 ```
-[Fase 1/5] FETCH — diff obtido: <N> arquivos, <L> linhas vs <base> (<scope>, trigger <ON|OFF>)
+[Fase 1/5] FETCH — diff obtido: <N> arquivos, <L> linhas vs origin/<base>@<sha curto> (<scope>, trigger <ON|OFF>)
 ```
 
-If trigger ON, add:
-
-```
-Worker TYPECHECK será ativado em paralelo com STANDARDS.
-```
+(Se `<ref>` for a base local, usar `<base>@<sha curto>`.)
