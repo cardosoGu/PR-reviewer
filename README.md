@@ -122,6 +122,7 @@ PRs grandes podem usar workers paralelos (contrato genérico, sem depender de ru
 
 ## Changelog
 
+- **1.1.1** — greps de símbolo seguros para nomes com `$`; `export type { } from` coberto no IMPORT-CHECK; contagem do IMPORT-CHECK definida (pós-dedup, N = B + R + I); TYPECHECK combina erros e falha de config por package.
 - **1.1.0** — IMPORT-CHECK determinístico; TYPECHECK opt-in; over-engineering com verificação ativa; comparação com `origin/<base>` e `git fetch --no-tags origin <base>` restrito.
 - **1.0.0** — versão inicial.
 

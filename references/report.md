@@ -79,7 +79,7 @@ Ressalvas: [R]
 Sugestões: [S]
 
 Branch: [current] → base: [base] ([M] commits, [F] arquivos)
-IMPORT-CHECK: [ok | N achados (B bloqueantes, I incertos)]
+IMPORT-CHECK: [ok | N achados (B bloqueantes, R ressalvas, I incertos)]
 TYPECHECK: [não solicitado | ok | <N> erros | timeout | skipped | falhou (config)]
 
 ---
@@ -126,7 +126,7 @@ For suggestion-only items without a code block, RC is still mandatory.
 
 ## Empty States
 
-The two status lines (`IMPORT-CHECK`, `TYPECHECK`) appear in every report, including empty states, placed as in the Final Report Template. `TYPECHECK` status: `<N> erros` = errors found (each also a finding); `falhou (config)` = typecheck could not run because its config is broken (not a finding).
+The two status lines (`IMPORT-CHECK`, `TYPECHECK`) appear in every report, including empty states, placed as in the Final Report Template. `TYPECHECK` status: `<N> erros` = errors found (each also a finding); `falhou (config)` = typecheck could not run because its config is broken (not a finding). With several packages, combine per package (e.g. `3 erros; falhou (config) em packages/api`). `IMPORT-CHECK` counts are taken after dedup, with `N = B + R + I`.
 
 **No blockers, no ressalvas:**
 
@@ -136,7 +136,7 @@ Veredito: Aprovado
 Problemas bloqueantes: 0
 Ressalvas: 0
 Sugestões: [S]
-IMPORT-CHECK: [ok | N achados (B bloqueantes, I incertos)]
+IMPORT-CHECK: [ok | N achados (B bloqueantes, R ressalvas, I incertos)]
 TYPECHECK: [não solicitado | ok | <N> erros | timeout | skipped | falhou (config)]
 
 Nenhum problema de alta relevância encontrado.
@@ -146,7 +146,7 @@ Nenhum problema de alta relevância encontrado.
 
 ```markdown
 Veredito: Aprovado com ressalvas
-IMPORT-CHECK: [ok | N achados (B bloqueantes, I incertos)]
+IMPORT-CHECK: [ok | N achados (B bloqueantes, R ressalvas, I incertos)]
 TYPECHECK: [não solicitado | ok | <N> erros | timeout | skipped | falhou (config)]
 
 Nenhum problema bloqueante. [R] ressalva(s) recomendada(s) abaixo.
@@ -156,7 +156,7 @@ Nenhum problema bloqueante. [R] ressalva(s) recomendada(s) abaixo.
 
 ```markdown
 Veredito: Reprovado
-IMPORT-CHECK: [ok | N achados (B bloqueantes, I incertos)]
+IMPORT-CHECK: [ok | N achados (B bloqueantes, R ressalvas, I incertos)]
 TYPECHECK: [não solicitado | ok | <N> erros | timeout | skipped | falhou (config)]
 
 [N] problema(s) bloqueante(s) deve(m) ser corrigido(s) antes do merge.

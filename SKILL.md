@@ -12,7 +12,7 @@ description: >-
 disable-model-invocation: true
 metadata:
   author: cardo
-  version: 1.1.0
+  version: 1.1.1
 ---
 
 # Diffs Reviewer

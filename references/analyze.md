@@ -148,13 +148,13 @@ For `import { A, B } from "./local"` (also `import type { A }` / `import { type 
 
 ```bash
 
-git grep -nE 'export +((declare|abstract|async|const) +)*(const|let|var|function|class|type|interface|enum|namespace|module) *\*? *A\b|export *(type +)?\{[^}]*\bA\b' HEAD -- <resolved-file>
+git grep -nP 'export +((declare|abstract|async|const) +)*(const|let|var|function|class|type|interface|enum|namespace|module) *\*? *(?<![\w$])A(?![\w$])|export *(type +)?\{[^}]*(?<![\w$])A(?![\w$])' HEAD -- <resolved-file>
 
 ```
 
 
 
-**C1** covers `export const|let|var|function|function*|async function|class|abstract class|declare …|const enum|type|interface|enum|namespace|module` and single-line `export { A }` / `export type { A }` / `export { X as A }`. `export default` covers default imports.
+**C1** covers `export const|let|var|function|function*|async function|class|abstract class|declare …|const enum|type|interface|enum|namespace|module` and single-line `export { A }` / `export type { A }` / `export { X as A }`. `export default` covers default imports. Names are bounded with `(?<![\w$])A(?![\w$])` instead of `\b`, so identifiers containing `$` (`$store`, `jQuery$`) match; escape `$` in the name as `\$`. A C1 hit on a re-export line (`export { A } from "./x"`, `export type { A } from "./x"`) counts as exported; the re-exported source is resolved by Step B only if that line is in the diff.
 
 
 
@@ -164,7 +164,7 @@ If C1 finds nothing, run the safety nets **C2** (constructs the recipe cannot fo
 
 ```bash
 
-git grep -nE 'export *\*|export *\{[^}]*$|export *\{[^}]*\} *from|module\.exports|exports\.' HEAD -- <resolved-file>
+git grep -nE 'export *\*|export *(type +)?\{[^}]*$|export *(type +)?\{[^}]*\} *from|module\.exports|exports\.' HEAD -- <resolved-file>
 
 ```
 
@@ -172,7 +172,7 @@ git grep -nE 'export *\*|export *\{[^}]*$|export *\{[^}]*\} *from|module\.export
 
 ```bash
 
-git grep -nP 'export.*\bA\b' HEAD -- <resolved-file>
+git grep -nP 'export.*(?<![\w$])A(?![\w$])' HEAD -- <resolved-file>
 
 ```
 
@@ -262,7 +262,7 @@ Each IMPORT-CHECK finding follows the Finding Quality Rules (file:line, snippet,
 
 
 
-Report the status line once: `IMPORT-CHECK: ok` or `IMPORT-CHECK: <N> achados (<B> bloqueantes, <I> incertos)`. `[Incerto]` items are counted separately; `ok` means zero findings of any kind.
+Report the status line once: `IMPORT-CHECK: ok` or `IMPORT-CHECK: <N> achados (<B> bloqueantes, <R> ressalvas, <I> incertos)`. Count **after dedup**: one finding per import statement (all missing names of one `import` = 1 finding) and one per orphan importer line; `N = B + R + I`. `ok` means zero findings of any kind.
 
 
 
@@ -446,7 +446,9 @@ Continue with manual typing review (§2.1).
 
 | Errors found | Report `TYPECHECK: <N> erros` (each error is also a finding) |
 
-| Config broken (could not run) | Report `TYPECHECK: falhou (config)` (not a finding); review continues |
+| Config broken (could not run: tsconfig missing/unparsable, or only TS5xxx/TS6xxx option errors) | Report `TYPECHECK: falhou (config)` (not a finding); review continues |
+
+| Several packages, mixed results | Combine per package, e.g. `TYPECHECK: 3 erros; falhou (config) em packages/api` — a config failure in one package never hides errors found in another |
 
 | Nothing detected (Level 3) | Report `TYPECHECK: skipped` |
 
@@ -566,7 +568,7 @@ Run the checklist on every file. **Each signal requires its verification** — e
 
 | ------ | ---------------------- | ----------------- |
 
-| Speculative generality | `git grep -nE '\b<Symbol>\b' HEAD -- <module>`; count uses outside the definition | usage count and where |
+| Speculative generality | `git grep -nP '(?<![\w$])<Symbol>(?![\w$])' HEAD -- <module>`; count uses outside the definition | usage count and where |
 
 | Duplicated infrastructure | Read the base class / parent schema / middleware chain of the file and check whether it already applies the same plugin, helper or hook | quoted snippet of the base that already covers it |
 
@@ -576,8 +578,10 @@ Run the checklist on every file. **Each signal requires its verification** — e
 
 | Future-only config | `git grep` the flag/param; check if any call site passes a non-default value | call sites found |
 
-| Dead code in diff | `git grep -nE '\b<newExport>\b' HEAD`; zero references outside its own file and tests. Exclude convention or entry exports: default/framework exports of page, route or config files, files referenced by `package.json` `main`/`exports`/`bin`, ambient `.d.ts`, and exports of files that are themselves new and unreferenced (report the file once). Uncertain → `[Incerto]`. | grep result |
+| Dead code in diff | `git grep -nP '(?<![\w$])<newExport>(?![\w$])' HEAD`; zero references outside its own file and tests. Exclude convention or entry exports: default/framework exports of page, route or config files, files referenced by `package.json` `main`/`exports`/`bin`, ambient `.d.ts`, and exports of files that are themselves new and unreferenced (report the file once). Uncertain → `[Incerto]`. | grep result |
 
+
+Symbol greps bound names with `(?<![\w$])…(?![\w$])` (not `\b`), so names containing `$` match; escape `$` as `\$`. A zero result from a `\b` grep on a `$` name is not evidence.
 
 **Sem evidência, sem achado.** A signal without confirmation is not reported. With a strong hint but incomplete confirmation, report as `[Incerto]` (→ Sugestão per verdict.md). The evidence goes into the finding and into the RC.
 
