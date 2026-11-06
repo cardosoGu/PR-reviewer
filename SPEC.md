@@ -1,4 +1,4 @@
-# Spec: diffs-reviewer v1.1
+# Spec: diffs-reviewer v1.2
 
 ## Problem Statement
 
@@ -29,6 +29,13 @@ Spec de design completa: `Specs-Cardoso/skills/diffs-reviewer/2026-11-06-diffs-r
 - **Over-engineering com verificação ativa**: cada sinal exige "como confirmar"; sem evidência, sem achado.
 - **Fluxo git**: compara com `origin/<base>`; único comando de rede é `git fetch --no-tags origin <base>`.
 
+## v1.2 changes
+
+- **Tokens:** IMPORT-CHECK em lote (≈6 comandos por review, não por import); `git ls-tree -r` sempre filtrado; TYPECHECK movido para `references/typecheck.md` (carregado só sob pedido); `verdict.md` fundido em `report.md`; peers lidos por trecho (≤60 linhas + greps), máx 5 por módulo; diff e contagem de linhas só sobre arquivos filtrados (lockfiles não inflam o escopo).
+- **Qualidade:** intenção da PR (mensagens de commit) usada em ANALYZE §2.2; Small lê 3 peers (inferência exige 3+); allowlist única em `fetch-diff.md`; trigger removido.
+- **Workers:** sem worker de TYPECHECK (comando em background); ANALYZE workers só a partir de 25 arquivos ou 1500 linhas; IMPORT-CHECK, passada entre lotes e reverificação de Bloqueantes ficam no orquestrador; lotes por módulo; Bloqueante de worker exige evidência.
+- **Teste:** `tests/check-recipes.js` monta um fixture e valida as receitas copiadas do `analyze.md`.
+
 ## Decisions Log
 
 | Decisão | Escolha | Versão |
@@ -55,23 +62,31 @@ Spec de design completa: `Specs-Cardoso/skills/diffs-reviewer/2026-11-06-diffs-r
 | Over-engineering | Verificação ativa por sinal; sem evidência, sem achado | v1.1 |
 | Base de comparação | `origin/<base>` + `git fetch --no-tags origin <base>` restrito | v1.1 |
 | gh | Descartado (superfície de escrita no GitHub) | v1.1 |
+| IMPORT-CHECK | Em lote: um comando por etapa para a PR inteira | v1.2 |
+| TYPECHECK | Comando em background com saída filtrada; sem worker | v1.2 |
+| Trigger | Removido; escopo (Small/Medium/Large) e limiar de workers (≥25 arquivos ou >1500 linhas) | v1.2 |
+| Padrões | 3 peers por trecho em todo escopo; +2 se misto; máx 5; Large até 6 módulos | v1.2 |
+| ANALYZE workers | ≥25 arquivos ou >1500 linhas; lotes por módulo; orquestrador reverifica Bloqueantes | v1.2 |
+| Intenção da PR | Mensagens de commit (últimos 30) usadas na análise de lógica | v1.2 |
+| Regressão | `tests/check-recipes.js` (fixture + receitas extraídas do texto) | v1.2 |
 
 ## Canonical Rules (must not contradict)
 
 These rules are law. Reference files must align; if conflict, SPEC wins.
 
 1. **TYPECHECK:** never automatic; on request only, background, 120s timeout; script do projeto first, then `tsc -p` / `tsc -b`; never `tsc -- file1 file2`; never build as automatic fallback.
-2. **Diff:** Large PR → hunks per file; never STANDARDS + full diff simultaneously.
-3. **TYPECHECK worker:** only when the user asked for typecheck; compact return (no raw log).
-4. **ANALYZE workers:** never auto — always offer-then-confirm; platform-agnostic contract.
-5. **Peers:** per module; baseline 1–2; max 7; expand only if dimension ambiguous.
+2. **Diff:** Large PR → hunks per file; never STANDARDS + full diff simultaneously; diff content and line counts only over filtered files.
+3. **TYPECHECK execution:** background shell command, filtered output (no raw log), no worker; `typecheck.md` loaded only on request.
+4. **ANALYZE workers:** never auto — offer-then-confirm at ≥25 files or >1500 diff lines; IMPORT-CHECK and Bloqueante re-verification stay with the orchestrator; platform-agnostic contract.
+5. **Peers:** per module; 3 excerpts baseline; max 5; expand only if dimension ambiguous; never whole files.
 6. **RC:** mandatory on every finding; strict template; user's language.
-7. **Over-engineering:** checklist on every file; graduated severity (see verdict.md).
+7. **Over-engineering:** checklist on every file; graduated severity (see report.md).
 8. **Review:** no early exit — all diff files analyzed.
 9. **Bloqueante:** functional/security/typecheck impact only — never style-only OE.
 10. **IMPORT-CHECK:** always on, all scopes, no checkout; broken import/export/orphan importer → Bloqueante; ambiguity → `[Incerto]`.
 11. **Git:** only network command is `git fetch --no-tags origin <base>`; comparison uses `origin/<base>` when it exists.
 12. **Over-engineering:** no finding without verification evidence.
+13. **Context:** never an unfiltered `git ls-tree -r`; IMPORT-CHECK batched per step, not per import.
 
 ## File Structure
 
@@ -80,13 +95,16 @@ diffs-reviewer/
 ├── SKILL.md
 ├── SPEC.md
 ├── .skill-meta.json
-└── references/
-    ├── fetch-diff.md
-    ├── standards.md
-    ├── analyze.md
-    ├── verdict.md
-    ├── report.md
-    └── sub-agents.md
+├── references/
+│   ├── fetch-diff.md
+│   ├── standards.md
+│   ├── analyze.md
+│   ├── typecheck.md      (só sob pedido)
+│   ├── report.md         (VERDICT + REPORT)
+│   └── sub-agents.md     (só PRs muito grandes)
+└── tests/
+    ├── check-recipes.js
+    └── expected-review.md
 ```
 
 ## Verdict Model
@@ -122,8 +140,9 @@ diffs-reviewer/
 - [ ] TYPECHECK via script do projeto (ex.: `npm run typecheck`) (sob pedido)
 - [ ] TYPECHECK monorepo via `tsc -b` no package afetado (sob pedido)
 - [ ] TYPECHECK skip quando sem tsconfig/script (sob pedido)
-- [ ] Trigger ON em PR 14 arquivos / 620 linhas → oferta de ANALYZE workers; TYPECHECK worker não sobe sem pedido
-- [ ] Trigger OFF em PR 2 arquivos → sem worker
+- [ ] PR com 30 arquivos → oferta de ANALYZE workers (avisa custo); PR com 14 arquivos → sem oferta
+- [ ] Lockfile grande no diff não muda o escopo
+- [ ] `node tests/check-recipes.js` → ALL PASS
 - [ ] Large PR → hunks por arquivo, não diff completo em STANDARDS
 - [ ] Docs em `.cursor/rules/` detectados
 - [ ] Inferência por módulo; expansão peers se ambíguo
@@ -152,3 +171,4 @@ diffs-reviewer/
 - [ ] Duplicated infra: plugin já na base → Ressalva com trecho da base
 - [ ] Sinal de OE sem confirmação → não reportado
 - [ ] Repo grande: greps restritos ao módulo, review conclui em tempo razoável
+- [ ] Monorepo: nenhuma listagem completa de arquivos aparece no contexto
