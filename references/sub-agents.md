@@ -1,8 +1,8 @@
-# Worker Delegation (active when trigger ON)
+# Worker Delegation
 
-**Goal:** Reduce wall-clock on large PRs by parallelizing TYPECHECK and optional file analysis. Keep orchestrator context lean — workers return compact summaries only.
+**Goal:** Reduce wall-clock on large PRs by parallelizing optional file analysis (ANALYZE workers); also hosts the TYPECHECK worker contract, used only when the user asked for typecheck. Keep orchestrator context lean — workers return compact summaries only.
 
-Read this file when **trigger ON** (from FETCH) or before offering ANALYZE workers.
+Read this file when **scope is Large** (from FETCH, before offering ANALYZE workers) or when the user asked for typecheck.
 
 **Platform-agnostic:** this file defines worker **contracts** (input, output, constraints). How to spawn workers depends on the runtime — never assume a specific IDE, tool, or API.
 
@@ -36,7 +36,7 @@ OR diff_lines > 800
 | Worker | Activation |
 | ------ | ---------- |
 | **TYPECHECK worker** | **Only when the user asked for typecheck** (opt-in) and typecheck path detected (see analyze.md §1); never automatic |
-| **ANALYZE workers** | **Offer-then-confirm only** — never auto-spawn |
+| **ANALYZE workers** | Offered when scope is Large (trigger ON not required); **offer-then-confirm only** — never auto-spawn |
 
 ---
 
@@ -75,7 +75,7 @@ TYPECHECK complete:
 - Packages checked: <N>
 - Errors in diff scope: <N>
   - <file>:<line> — <code> — <message>
-- Status: ok | failed (reason if config broken) | timeout
+- Status: ok | <N> erros | timeout | skipped | falhou (config) (reason if config broken)
 ```
 
 No raw compiler log. Orchestrator merges into ANALYZE findings.
@@ -90,7 +90,7 @@ If worker delegation unavailable and the user asked for typecheck: orchestrator 
 
 ### When
 
-Scope is **Large** (11+ files OR >500 diff lines) AND user accepts.
+Scope is **Large** (11+ files OR >500 diff lines; trigger ON is not required) AND user accepts.
 
 **Offer (never auto):**
 
@@ -116,9 +116,9 @@ Orchestrator
 ```
 ANALYZE task:
 - Repo path: <absolute>
-- Base branch: <base>
+- Base ref: <ref> (from FETCH)
 - File batch: [<file>, ...]
-- Diff hunks: per file (git diff <base>...HEAD -- <file>)
+- Diff hunks: per file (git diff <ref>...HEAD -- <file>)
 - Standards snapshot: <compact markdown>
 - Checklist: analyze.md §2.1–2.6 summary
 - Rules: read-only; RC on every finding; no speculation without [Incerto]
@@ -141,7 +141,7 @@ Orchestrator merges into VERDICT phase, deduplicates, refines RC in REPORT if ne
 
 | Condition | Behavior |
 | --------- | -------- |
-| Trigger OFF | Single agent, full workflow inline |
+| Scope not Large | Single agent, full workflow inline |
 | User declines ANALYZE workers | Single agent ANALYZE |
 | Worker delegation unavailable | Inline TYPECHECK (only if asked) + sequential ANALYZE |
 | TYPECHECK not requested | Skip TYPECHECK; IMPORT-CHECK §0 and manual §2.1 only |

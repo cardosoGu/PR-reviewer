@@ -53,7 +53,7 @@ Every over-engineering finding **must carry the evidence** of its verification (
 | ------ | ---------------- |
 | Duplicated plugin/middleware (base already applies it — snippet cited) | **Ressalva** |
 | Abstraction layer unused in module (usage count cited) | **Ressalva** |
-| Dead export with 0 references (grep result cited) | **Ressalva** |
+| Dead export with 0 references (grep result cited). Exclude convention or entry exports: default/framework exports of page, route or config files, files referenced by `package.json` `main`/`exports`/`bin`, ambient `.d.ts`, and exports of files that are themselves new and unreferenced (report the file once). Uncertain → `[Incerto]`. | **Ressalva** |
 | Middle man / unnecessary wrapper | **Ressalva** or **Sugestão** |
 | Future-only flag or param | **Sugestão** |
 | `[Incerto]` on OE | **Sugestão** |

@@ -127,7 +127,7 @@ If the filtered list is empty, stop: "Nenhum arquivo relevante no diff."
 | Scope  | Condition |
 | ------ | --------- |
 | Small  | ≤3 files AND ≤100 diff lines |
-| Medium | 4–10 files OR ≤500 diff lines (and not Large) |
+| Medium | Not Small and not Large |
 | Large  | 11+ files OR >500 diff lines |
 
 **Trigger ON** when any of:

@@ -34,7 +34,7 @@ Review local read-only focado em problemas de alta relevância. Analisa o diff d
 
 1. **Read-only** — git: `diff`, `log`, `show`, `status`, `branch`, `remote`, `rev-parse`, `ls-tree`, `grep` only, plus the single network command `git fetch --no-tags origin <base>`. Never `push`, `pull`, `commit`, `checkout`, `reset`, `branch -D`, or any other state-changing command.
 2. **No file edits** in the repository under review.
-3. **Analyze only files in the diff** — read other files for context and patterns only.
+3. **Analyze only files in the diff** — read other files for context and patterns only. Exception: IMPORT-CHECK Step D reports importers outside the diff that still reference a deleted/renamed file.
 4. **Blockers → Reprovado** — never "Aprovado com ressalvas" when a blocking issue exists.
 5. **Do not invent rules** — documented standards override inference; inference requires 3+ consistent occurrences.
 6. **Do not speculate** — if uncertain, mark as uncertain; prefer omission over false positives.
@@ -47,11 +47,11 @@ Review local read-only focado em problemas de alta relevância. Analisa o diff d
 
 After FETCH, classify **scope** and compute **trigger** (see [fetch-diff.md](references/fetch-diff.md)):
 
-| Scope  | Files | Diff lines | Execution |
-| ------ | ----- | ---------- | --------- |
-| Small  | ≤3    | ≤100       | Single agent; IMPORT-CHECK inline; STANDARDS light (1 peer/module) |
-| Medium | 4–10  | ≤500       | Single agent; IMPORT-CHECK inline |
-| Large  | 11+   | >500       | Trigger ON; hunks per file; offer ANALYZE workers |
+| Scope  | Condition | Execution |
+| ------ | --------- | --------- |
+| Small  | ≤3 files AND ≤100 diff lines | Single agent; IMPORT-CHECK inline; STANDARDS light (1 peer/module) |
+| Medium | Not Small and not Large | Single agent; IMPORT-CHECK inline |
+| Large  | 11+ files OR >500 diff lines | Hunks per file; offer ANALYZE workers |
 
 **Trigger ON** when any of:
 
@@ -61,7 +61,7 @@ OR files > 12
 OR diff_lines > 800
 ```
 
-Trigger ON no longer spawns TYPECHECK automatically. It only drives the ANALYZE-workers offer; the TYPECHECK worker runs only if the user asked for typecheck. See [sub-agents.md](references/sub-agents.md).
+Trigger ON does not spawn TYPECHECK and does not gate the ANALYZE-workers offer (that depends on Large scope); the TYPECHECK worker runs only if the user asked for typecheck. See [sub-agents.md](references/sub-agents.md).
 
 **ANALYZE workers** (file batches): offer-then-confirm only — never auto-spawn. User must accept.
 
@@ -83,7 +83,7 @@ Display progress by **phase** (not per-file). Use the user's conversation langua
 - `standards.md` — after file list is known
 - `analyze.md` — with diff + standards context
 - `verdict.md` + `report.md` — after analysis complete
-- `sub-agents.md` — when trigger ON or before offering ANALYZE workers
+- `sub-agents.md` — when scope is Large (before offering ANALYZE workers) or the user asked for typecheck
 
 **Never load simultaneously:** `standards.md` + full diff content on Large PRs — process standards first, then analyze file by file (hunks only).
 
@@ -98,12 +98,12 @@ Display progress by **phase** (not per-file). Use the user's conversation langua
 
 ## Worker Delegation
 
-The ANALYZE-workers offer is active when **trigger ON**; the TYPECHECK worker only when the user asked for typecheck (any scope). Read [sub-agents.md](references/sub-agents.md):
+The ANALYZE-workers offer is active when **scope is Large**; the TYPECHECK worker only when the user asked for typecheck (any scope). Read [sub-agents.md](references/sub-agents.md):
 
 - **TYPECHECK worker** — only when the user asked for typecheck; compact return only
 - **ANALYZE workers** — offer-then-confirm on Large scope; user must accept
 
-Worker contracts are platform-agnostic (input/output/constraints). If delegation unavailable or trigger OFF: single agent runs full workflow inline.
+Worker contracts are platform-agnostic (input/output/constraints). If delegation unavailable or scope is not Large: single agent runs full workflow inline.
 
 ## Additional Resources
 
