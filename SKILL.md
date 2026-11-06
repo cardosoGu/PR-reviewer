@@ -98,7 +98,7 @@ Display progress by **phase** (not per-file). Use the user's conversation langua
 
 ## Worker Delegation
 
-Active when **trigger ON**. Read [sub-agents.md](references/sub-agents.md):
+The ANALYZE-workers offer is active when **trigger ON**; the TYPECHECK worker only when the user asked for typecheck (any scope). Read [sub-agents.md](references/sub-agents.md):
 
 - **TYPECHECK worker** — only when the user asked for typecheck; compact return only
 - **ANALYZE workers** — offer-then-confirm on Large scope; user must accept

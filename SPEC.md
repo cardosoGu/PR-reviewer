@@ -10,10 +10,10 @@ Skill modular com execução adaptativa:
 
 - Orquestrador `SKILL.md` + referências por fase em `references/`
 - 5 fases: FETCH → STANDARDS → ANALYZE → VERDICT → REPORT
-- **Trigger** composto para workers (TYPECHECK auto; ANALYZE workers com confirmação)
+- **Trigger** composto para workers (ANALYZE workers com confirmação; TYPECHECK só sob pedido desde v1.1)
 - **Auto-sizing com dentes** — comportamento muda por Small/Medium/Large
 - Padrões: docs primeiro + inferência por módulo (peers adaptativos, máx 7)
-- **TYPECHECK** — script do projeto → `tsc -p` / `tsc -b` por package; skip se ausente
+- **TYPECHECK** — script do projeto → `tsc -p` / `tsc -b` por package; skip se ausente (superado em v1.1)
 - **RC obrigatório** em todo achado (template fixo, idioma do usuário)
 - **Over-engineering** — checklist obrigatório em todo arquivo (severidade graduada)
 - Veredito: bloqueantes = Reprovado; ressalvas = melhorias não-bloqueantes
@@ -37,7 +37,7 @@ Spec de design completa: `Specs-Cardoso/skills/diffs-reviewer/2026-11-06-diffs-r
 | Base branch | Auto-detect + override soft se usuário mencionar | v1 |
 | Git | Read-only apenas | v1 |
 | TYPECHECK | Script do projeto → `tsc -p` / `tsc -b` por package; skip se ausente | v1 |
-| TYPECHECK worker | Auto quando trigger ON + typecheck path detectado | v1 |
+| TYPECHECK worker | Auto quando trigger ON + typecheck path detectado (superado em v1.1) | v1 |
 | ESLint | Não roda | v1 |
 | Padrões | Docs + inferência por módulo (2 peers, expande até 7) | v1 |
 | Diff handoff | Large = hunks; Small/Medium = diff compacto ok | v1 |
@@ -119,10 +119,10 @@ diffs-reviewer/
 - [ ] Auto-detect base em repo com main
 - [ ] Override soft `base=develop`
 - [ ] Branch main vs main → aviso correto
-- [ ] TYPECHECK via script do projeto (ex.: `npm run typecheck`)
-- [ ] TYPECHECK monorepo via `tsc -b` no package afetado
-- [ ] TYPECHECK skip quando sem tsconfig/script
-- [ ] Trigger ON em PR 14 arquivos / 620 linhas → TYPECHECK worker auto
+- [ ] TYPECHECK via script do projeto (ex.: `npm run typecheck`) (sob pedido)
+- [ ] TYPECHECK monorepo via `tsc -b` no package afetado (sob pedido)
+- [ ] TYPECHECK skip quando sem tsconfig/script (sob pedido)
+- [ ] Trigger ON em PR 14 arquivos / 620 linhas → oferta de ANALYZE workers; TYPECHECK worker não sobe sem pedido
 - [ ] Trigger OFF em PR 2 arquivos → sem worker
 - [ ] Large PR → hunks por arquivo, não diff completo em STANDARDS
 - [ ] Docs em `.cursor/rules/` detectados
