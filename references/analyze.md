@@ -48,15 +48,13 @@ Recipes are written for bash / Git Bash and use `git grep -P` / `grep -P` with `
 
 ```bash
 
-git diff <ref>...HEAD -U0 --no-color -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs' \
-
-  | grep -P '^\+([^+].*)?(from\s*[\x27\x22]|import\s*[\x27\x22]|require\(|import\()'
+git diff <ref>...HEAD -U0 --no-color -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs' | grep -P '^\+([^+].*)?(from\s*[\x27\x22]|import\s*[\x27\x22]|require\(|import\()'
 
 ```
 
 
 
-This keeps added lines (a single leading `+`, so `+++ b/file` headers are excluded) containing `from "x"`, `import "x"` (side-effect imports), `export … from "x"`, `require("x")`, `import("x")`. Track file and line from the `+++ b/<file>` header and the `@@ -a,b +c,d @@` hunk header (run the diff without the grep, or per file, when line numbers are needed). Strip `?query` / `#hash` suffixes (`?raw`, `?url`) from specifiers. Skip external packages (specifier without leading `.`/`/` and not matching a tsconfig alias) — they go to Step E.
+This keeps added lines (a single leading `+`, so `+++ b/file` headers are excluded) containing `from "x"`, `import "x"` (side-effect imports), `export … from "x"`, `require("x")`, `import("x")`. To get file:line, run the diff without the grep (or per file): the `+++ b/<path>` header gives the file and the `@@ -a,b +c,d @@` header gives the start line `c`; with `-U0` each hunk contains only added/removed lines, so the first `+` line after the header is line `c`, and each following `+` line is `c+1`, `c+2`, … (do not count `-` lines). Strip `?query` / `#hash` suffixes (`?raw`, `?url`) from specifiers. Skip external packages (specifier without leading `.`/`/` and not matching a tsconfig alias) — they go to Step E.
 
 
 
@@ -86,7 +84,7 @@ For a normalized path `P` (no `?query`), test in this order against the list:
 
 1. the literal path `P` (the specifier may already carry an extension: `./style.css`, `./logo.svg`, `./data.json`, `./x.js`);
 
-2. `P.ts|.tsx|.js|.jsx|.mjs|.cjs|.json`, then `P/index.ts|.tsx|.js|.jsx`;
+2. `P.ts|.tsx|.mts|.cts|.d.ts|.d.mts|.d.cts|.js|.jsx|.mjs|.cjs|.json|.vue|.svelte|.astro`, then `P/index.ts|.tsx|.js|.jsx`;
 
 3. ESM convention — `P` ending in `.js`/`.jsx` maps to the same name with `.ts`/`.tsx`.
 
@@ -98,13 +96,25 @@ One command covers 1 and 2 (escape regex metacharacters in `P`, e.g. `.` → `\.
 
 ```bash
 
-git ls-tree -r --name-only HEAD | grep -xE -e 'P' -e 'P\.(ts|tsx|js|jsx|mjs|cjs|json)' -e 'P/index\.(ts|tsx|js|jsx)'
+git ls-tree -r --name-only HEAD | grep -xE -e 'P' -e 'P\.(d\.ts|d\.mts|d\.cts|ts|tsx|mts|cts|js|jsx|mjs|cjs|json|vue|svelte|astro)' -e 'P/index\.(ts|tsx|js|jsx)'
 
 ```
 
 
 
-No output and rule 3 fails → finding (**Bloqueante** only when the literal path is absent and the specifier is a plain relative path). A bundler-specific scheme or an alias not defined in tsconfig → `[Incerto]`.
+If nothing matches and rule 3 fails, apply a final net: list the directory of the normalized path (`<dir>` = `P` minus its last segment, `<stem>` = that segment) `<dir>` and look for any entry with the same stem (any other extension, or a directory):
+
+
+
+```bash
+
+git ls-tree --name-only HEAD <dir>/ | grep -E '^<dir>/<stem>(\.|/|$)'
+
+```
+
+
+
+Any output → `[Incerto]` (an unlisted extension or loader). **Bloqueante only when no entry with that stem exists in the directory** and the specifier is a plain relative path. A bundler-specific scheme or an alias not defined in tsconfig → `[Incerto]`.
 
 
 
@@ -118,17 +128,17 @@ For `import { A, B } from "./local"` (also `import type { A }` / `import { type 
 
 ```bash
 
-git grep -nE 'export +((declare|abstract|async|const) +)*(const|let|var|function|class|type|interface|enum) *\*? *A\b|export *\{[^}]*\bA\b' HEAD -- <resolved-file>
+git grep -nE 'export +((declare|abstract|async|const) +)*(const|let|var|function|class|type|interface|enum|namespace|module) *\*? *A\b|export *(type +)?\{[^}]*\bA\b' HEAD -- <resolved-file>
 
 ```
 
 
 
-This covers `export const|let|var|function|function*|async function|class|abstract class|declare …|const enum|type|interface|enum` and single-line `export { A }` / `export { X as A }`. `export default` covers default imports.
+**C1** covers `export const|let|var|function|function*|async function|class|abstract class|declare …|const enum|type|interface|enum|namespace|module` and single-line `export { A }` / `export type { A }` / `export { X as A }`. `export default` covers default imports.
 
 
 
-If it finds nothing, check whether the file has constructs the recipe cannot follow:
+If C1 finds nothing, run the safety nets **C2** (constructs the recipe cannot follow) and **C3** (any `export` line mentioning the name):
 
 
 
@@ -140,7 +150,15 @@ git grep -nE 'export *\*|export *\{[^}]*$|export *\{[^}]*\} *from|module\.export
 
 
 
-Any hit (`export *`, a multi-line `export {`, a re-export, CommonJS exports), or names not visible on `+` lines → mark `[Incerto]` (or read the file with `git show HEAD:<file>` and decide). Only a miss in a file with **none** of those is **Bloqueante**.
+```bash
+
+git grep -nP 'export.*\bA\b' HEAD -- <resolved-file>
+
+```
+
+
+
+Any C2 hit (`export *`, a multi-line `export {`, a re-export, CommonJS exports), any C3 hit (e.g. `export const { A } = o`, `export import A = …`), or names not visible on `+` lines → mark `[Incerto]` (or read the file with `git show HEAD:<file>` and decide). **Bloqueante only if C1, C2 and C3 all miss.**
 
 
 
@@ -208,9 +226,9 @@ Absent → finding (`[Incerto]` if the package may be provided by the workspace/
 
 | ------ | -------- |
 
-| Relative/alias path does not resolve | **Bloqueante** |
+| Relative/alias path does not resolve and no same-stem entry exists in the directory (Step B net) | **Bloqueante** |
 
-| Named export does not exist in resolved file (no `export *`/re-export/multi-line `export {` in it) | **Bloqueante** |
+| Named export does not exist in resolved file (C1, C2 and C3 all miss) | **Bloqueante** |
 
 | Deleted/renamed file still imported | **Bloqueante** (list all importers) |
 
