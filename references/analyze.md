@@ -535,42 +535,43 @@ Read imported modules only as needed — do not load unrelated areas.
 #### 2.6 Over-engineering (mandatory — every file)
 
 
-
-Always check for:
-
+Run the checklist on every file. **Each signal requires its verification** — even when the conclusion is "nothing found".
 
 
-| Signal | What to look for |
+| Signal | Como confirmar (cheap) | Evidência exigida |
 
-| ------ | ---------------- |
+| ------ | ---------------------- | ----------------- |
 
-| Speculative generality | Abstraction/interface with no use in diff or module |
+| Speculative generality | `git grep -nE '\b<Symbol>\b' HEAD -- <module>`; count uses outside the definition | usage count and where |
 
-| Duplicated infrastructure | Plugin/middleware/helper already in base class or shared schema |
+| Duplicated infrastructure | Read the base class / parent schema / middleware chain of the file and check whether it already applies the same plugin, helper or hook | quoted snippet of the base that already covers it |
 
-| Middle man | Class/function that only delegates without adding logic |
+| Middle man | Read the body: only delegates, no logic, no error handling, no transformation | summarized body |
 
-| Unnecessary wrapper | Factory/builder for a single code path |
+| Unnecessary wrapper / Premature abstraction | Count implementations and call sites of the Factory/Builder/Strategy (`git grep` for `implements`, `extends`, usages) | number of implementations (1 confirms) |
 
-| Future-only config | Flags or params with no requirement in this change |
+| Future-only config | `git grep` the flag/param; check if any call site passes a non-default value | call sites found |
 
-| Premature abstraction | Strategy/Factory with one implementation |
+| Dead code in diff | `git grep -nE '\b<newExport>\b' HEAD`; zero references outside its own file and tests | grep result |
 
-| Dead code in diff | New export/function never referenced |
 
+**Sem evidência, sem achado.** A signal without confirmation is not reported. With a strong hint but incomplete confirmation, report as `[Incerto]` (→ Sugestão per verdict.md). The evidence goes into the finding and into the RC.
+
+
+**Orçamento.** At most one verification per candidate symbol; scope greps to the file's module/package; repo-wide only for public exports. No cross-file second pass in this version.
 
 
 Classify severity per [verdict.md](verdict.md) over-engineering table. Always include RC.
 
 
-
 **Examples:**
 
 
+- Plugin `aggregatePaginate` applied again on schema that extends `baseSchema`, and the base snippet already applies it (quoted) → **Ressalva**
 
-- Plugin `aggregatePaginate` applied again on schema that extends `baseSchema` where plugin is already applied → **Ressalva**
+- New export `neverUsed` with 0 references at `HEAD` (grep result cited) → **Ressalva**
 
-- New service layer wrapping a single direct call → **Sugestão** or **Ressalva**
+- New service layer wrapping a single direct call (body summarized) → **Sugestão** or **Ressalva**
 
 
 
