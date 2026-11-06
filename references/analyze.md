@@ -30,7 +30,15 @@ Runs in **every scope**, by the orchestrator, before the per-file review. Uses o
 
 
 
+Recipes are written for bash / Git Bash and use `git grep -P` / `grep -P` with `\x27` (single quote) and `\x22` (double quote) so the patterns contain no quote characters. Under PowerShell, run the git commands directly (they work as written) and run the `| grep` filter via `bash -c` or replace it with `Select-String`.
+
+
+
 **Input:** added lines of JS/TS files in the diff, plus deleted/renamed files from `git diff <ref>...HEAD --name-status -M`.
+
+
+
+**Governing rule:** only a deterministic, confirmed miss is **Bloqueante**. A grep miss that could be a recipe limitation, or any ambiguous resolution, is `[Incerto]`.
 
 
 
@@ -40,13 +48,19 @@ Runs in **every scope**, by the orchestrator, before the per-file review. Uses o
 
 ```bash
 
-git diff <ref>...HEAD -U0 --no-color -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs'
+git diff <ref>...HEAD -U0 --no-color -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs' \
+
+  | grep -P '^\+([^+].*)?(from\s*[\x27\x22]|import\s*[\x27\x22]|require\(|import\()'
 
 ```
 
 
 
-Keep lines starting with a single `+` that match `from "x"`, `import "x"`, `export … from "x"`, `require("x")`, `import("x")`. Track file and line from the `@@ -a,b +c,d @@` hunk header. Skip external packages (specifier without leading `.`/`/` and not matching a tsconfig alias) — they go to Step E.
+This keeps added lines (a single leading `+`, so `+++ b/file` headers are excluded) containing `from "x"`, `import "x"` (side-effect imports), `export … from "x"`, `require("x")`, `import("x")`. Track file and line from the `+++ b/<file>` header and the `@@ -a,b +c,d @@` hunk header (run the diff without the grep, or per file, when line numbers are needed). Strip `?query` / `#hash` suffixes (`?raw`, `?url`) from specifiers. Skip external packages (specifier without leading `.`/`/` and not matching a tsconfig alias) — they go to Step E.
+
+
+
+Multi-line imports: a `+` line like `} from "x"` has its names on other lines. Resolve the path normally, but treat named-export verification (Step C) as `[Incerto]` when the names are not visible on `+` lines.
 
 
 
@@ -54,7 +68,7 @@ Keep lines starting with a single `+` that match `from "x"`, `import "x"`, `expo
 
 
 
-Relative specifiers, and aliases from the nearest tsconfig (`git show HEAD:<tsconfig>` → `paths`/`baseUrl`). Build the file list once and reuse it:
+Relative specifiers resolve against the **importing file's directory**, with `./` and `../` normalized (not against the repo root). Aliases come from the nearest tsconfig (`git show HEAD:<tsconfig>` → `paths`/`baseUrl`). Build the file list once and reuse it:
 
 
 
@@ -66,7 +80,31 @@ git ls-tree -r --name-only HEAD
 
 
 
-A specifier `./x` resolves if the list contains `x.ts|.tsx|.js|.jsx|.mjs|.cjs|.json`, `x/index.ts|.tsx|.js|.jsx`, or — ESM convention — `./x.js` maps to `x.ts`/`x.tsx`. None found → finding.
+For a normalized path `P` (no `?query`), test in this order against the list:
+
+
+
+1. the literal path `P` (the specifier may already carry an extension: `./style.css`, `./logo.svg`, `./data.json`, `./x.js`);
+
+2. `P.ts|.tsx|.js|.jsx|.mjs|.cjs|.json`, then `P/index.ts|.tsx|.js|.jsx`;
+
+3. ESM convention — `P` ending in `.js`/`.jsx` maps to the same name with `.ts`/`.tsx`.
+
+
+
+One command covers 1 and 2 (escape regex metacharacters in `P`, e.g. `.` → `\.`):
+
+
+
+```bash
+
+git ls-tree -r --name-only HEAD | grep -xE -e 'P' -e 'P\.(ts|tsx|js|jsx|mjs|cjs|json)' -e 'P/index\.(ts|tsx|js|jsx)'
+
+```
+
+
+
+No output and rule 3 fails → finding (**Bloqueante** only when the literal path is absent and the specifier is a plain relative path). A bundler-specific scheme or an alias not defined in tsconfig → `[Incerto]`.
 
 
 
@@ -74,19 +112,35 @@ A specifier `./x` resolves if the list contains `x.ts|.tsx|.js|.jsx|.mjs|.cjs|.j
 
 
 
-For `import { A, B } from "./local"`, confirm each name is exported by the resolved file:
+For `import { A, B } from "./local"` (also `import type { A }` / `import { type A }`), confirm each name is exported by the resolved file. For `import { A as B }`, check the **original** name `A`. Replace `A` with the name:
 
 
 
 ```bash
 
-git grep -nE 'export (const|let|var|function|class|type|interface|enum) A\b|export \{[^}]*\bA\b' HEAD -- <resolved-file>
+git grep -nE 'export +((declare|abstract|async|const) +)*(const|let|var|function|class|type|interface|enum) *\*? *A\b|export *\{[^}]*\bA\b' HEAD -- <resolved-file>
 
 ```
 
 
 
-`export default` covers default imports; `export * from` or any chained re-export that cannot be followed in one hop → mark `[Incerto]`, do not report as blocker.
+This covers `export const|let|var|function|function*|async function|class|abstract class|declare …|const enum|type|interface|enum` and single-line `export { A }` / `export { X as A }`. `export default` covers default imports.
+
+
+
+If it finds nothing, check whether the file has constructs the recipe cannot follow:
+
+
+
+```bash
+
+git grep -nE 'export *\*|export *\{[^}]*$|export *\{[^}]*\} *from|module\.exports|exports\.' HEAD -- <resolved-file>
+
+```
+
+
+
+Any hit (`export *`, a multi-line `export {`, a re-export, CommonJS exports), or names not visible on `+` lines → mark `[Incerto]` (or read the file with `git show HEAD:<file>` and decide). Only a miss in a file with **none** of those is **Bloqueante**.
 
 
 
@@ -94,19 +148,19 @@ git grep -nE 'export (const|let|var|function|class|type|interface|enum) A\b|expo
 
 
 
-For each `D`/`R` entry (old path), find remaining importers at `HEAD`:
+For each `D`/`R` entry (old path), find remaining importers at `HEAD`. `<stem>` is the file name without extension, regex-escaped (`.` → `\.`). When the file is `dir/index.<ext>`, use `<dir>(/index)?` as the stem so imports of the directory (`"./dir"`) are found too:
 
 
 
 ```bash
 
-git grep -nE "['\"][^'\"]*/<stem>(\.[a-z]+)?['\"]" HEAD -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs'
+git grep -nP '[\x27\x22][^\x27\x22]*/<stem>(\.[a-z]+)?[\x27\x22]' HEAD -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs'
 
 ```
 
 
 
-Resolve each hit; if it points to the old path, it is a finding (list every importer). Importers deleted in the same diff do not appear at `HEAD`.
+Resolve each hit against the importing file's directory; if it points to the old path, it is a finding (list every importer). Importers deleted in the same diff do not appear at `HEAD`.
 
 
 
@@ -114,19 +168,35 @@ Resolve each hit; if it points to the old path, it is a finding (list every impo
 
 
 
-For external specifiers added by the diff, check the nearest `package.json` at `HEAD` (dependencies, devDependencies, peerDependencies; workspace root too):
+For external specifiers added by the diff, extract the package name: `@scope/pkg/sub` → `@scope/pkg`, `lodash/fp` → `lodash`. **Skip Node builtins entirely (not findings):** `node:*`, `fs`, `path`, `os`, `crypto`, `url`, `util`, `events`, `stream`, `child_process`, `http`, `https`, `zlib`, `buffer`, `assert`, `querystring`, `readline`, `net`, `tls`, `dns`, `worker_threads`, `perf_hooks`, `process`, `module`, `timers`, `v8`, `vm`.
+
+
+
+Find the nearest `package.json` — those in ancestor directories of the importing file, plus the workspace root:
 
 
 
 ```bash
 
-git show HEAD:package.json
+git ls-tree -r --name-only HEAD | grep -E '(^|/)package\.json$'
 
 ```
 
 
 
-Absent → finding (`[Incerto]` if the package may be provided by the workspace/runtime, e.g. node builtins `node:*`, `fs`, `path`).
+Check the package in dependencies, devDependencies, peerDependencies (and the workspace root):
+
+
+
+```bash
+
+git show HEAD:<package.json-path> | grep -P '\x22<package-name>\x22'
+
+```
+
+
+
+Absent → finding (`[Incerto]` if the package may be provided by the workspace/runtime).
 
 
 
@@ -140,21 +210,21 @@ Absent → finding (`[Incerto]` if the package may be provided by the workspace/
 
 | Relative/alias path does not resolve | **Bloqueante** |
 
-| Named export does not exist in resolved file | **Bloqueante** |
+| Named export does not exist in resolved file (no `export *`/re-export/multi-line `export {` in it) | **Bloqueante** |
 
 | Deleted/renamed file still imported | **Bloqueante** (list all importers) |
 
 | External package not declared | **Ressalva** (`[Incerto]` when plausibly provided elsewhere) |
 
-| Ambiguous resolution (`export *` chains, exotic `paths`, generated files matching `.gitignore`) | `[Incerto]` → **Sugestão** |
+| Ambiguous resolution (`export *` chains, multi-line exports, exotic `paths`, bundler schemes, generated files matching `.gitignore`) | `[Incerto]` → **Sugestão** |
 
 
 
-Every finding must cite the import `file:line` and the verification result (e.g. "`./missing` não existe em HEAD; testados: `.ts .tsx .js .jsx .mjs .cjs .json`, `/index.*`").
+Each IMPORT-CHECK finding follows the Finding Quality Rules (file:line, snippet, impact, fix, RC draft) plus the verification evidence, e.g. "`./missing` não existe em HEAD; testados: `.ts .tsx .js .jsx .mjs .cjs .json`, `/index.*`".
 
 
 
-Report the status line once: `IMPORT-CHECK: ok` or `IMPORT-CHECK: <N> achados`.
+Report the status line once: `IMPORT-CHECK: ok` or `IMPORT-CHECK: <N> achados (<B> bloqueantes, <I> incertos)`. `[Incerto]` items are counted separately; `ok` means zero findings of any kind.
 
 
 
