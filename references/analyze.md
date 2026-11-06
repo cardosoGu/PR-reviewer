@@ -2,7 +2,7 @@
 
 
 
-**Goal:** Review **every** file in the diff for type errors, logic bugs, security issues, standards violations, and over-engineering. Manual analysis is primary; TYPECHECK is a complement when the project supports it.
+**Goal:** Review **every** file in the diff for broken imports, type errors, logic bugs, security issues, standards violations, and over-engineering. IMPORT-CHECK (§0) is deterministic and always on; manual analysis is primary; TYPECHECK (§1) is opt-in.
 
 
 
@@ -19,6 +19,148 @@
 
 
 ## Process
+
+
+
+### 0. IMPORT-CHECK — deterministic import verification (always on)
+
+
+
+Runs in **every scope**, by the orchestrator, before the per-file review. Uses only read-only git at `HEAD` (no checkout, no project tooling). `<ref>` comes from FETCH.
+
+
+
+**Input:** added lines of JS/TS files in the diff, plus deleted/renamed files from `git diff <ref>...HEAD --name-status -M`.
+
+
+
+#### Step A — Extract specifiers from added lines
+
+
+
+```bash
+
+git diff <ref>...HEAD -U0 --no-color -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs'
+
+```
+
+
+
+Keep lines starting with a single `+` that match `from "x"`, `import "x"`, `export … from "x"`, `require("x")`, `import("x")`. Track file and line from the `@@ -a,b +c,d @@` hunk header. Skip external packages (specifier without leading `.`/`/` and not matching a tsconfig alias) — they go to Step E.
+
+
+
+#### Step B — Resolve paths against HEAD
+
+
+
+Relative specifiers, and aliases from the nearest tsconfig (`git show HEAD:<tsconfig>` → `paths`/`baseUrl`). Build the file list once and reuse it:
+
+
+
+```bash
+
+git ls-tree -r --name-only HEAD
+
+```
+
+
+
+A specifier `./x` resolves if the list contains `x.ts|.tsx|.js|.jsx|.mjs|.cjs|.json`, `x/index.ts|.tsx|.js|.jsx`, or — ESM convention — `./x.js` maps to `x.ts`/`x.tsx`. None found → finding.
+
+
+
+#### Step C — Named exports
+
+
+
+For `import { A, B } from "./local"`, confirm each name is exported by the resolved file:
+
+
+
+```bash
+
+git grep -nE 'export (const|let|var|function|class|type|interface|enum) A\b|export \{[^}]*\bA\b' HEAD -- <resolved-file>
+
+```
+
+
+
+`export default` covers default imports; `export * from` or any chained re-export that cannot be followed in one hop → mark `[Incerto]`, do not report as blocker.
+
+
+
+#### Step D — Reverse check (deleted/renamed files)
+
+
+
+For each `D`/`R` entry (old path), find remaining importers at `HEAD`:
+
+
+
+```bash
+
+git grep -nE "['\"][^'\"]*/<stem>(\.[a-z]+)?['\"]" HEAD -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs'
+
+```
+
+
+
+Resolve each hit; if it points to the old path, it is a finding (list every importer). Importers deleted in the same diff do not appear at `HEAD`.
+
+
+
+#### Step E — New external packages
+
+
+
+For external specifiers added by the diff, check the nearest `package.json` at `HEAD` (dependencies, devDependencies, peerDependencies; workspace root too):
+
+
+
+```bash
+
+git show HEAD:package.json
+
+```
+
+
+
+Absent → finding (`[Incerto]` if the package may be provided by the workspace/runtime, e.g. node builtins `node:*`, `fs`, `path`).
+
+
+
+#### Classification and evidence
+
+
+
+| Result | Severity |
+
+| ------ | -------- |
+
+| Relative/alias path does not resolve | **Bloqueante** |
+
+| Named export does not exist in resolved file | **Bloqueante** |
+
+| Deleted/renamed file still imported | **Bloqueante** (list all importers) |
+
+| External package not declared | **Ressalva** (`[Incerto]` when plausibly provided elsewhere) |
+
+| Ambiguous resolution (`export *` chains, exotic `paths`, generated files matching `.gitignore`) | `[Incerto]` → **Sugestão** |
+
+
+
+Every finding must cite the import `file:line` and the verification result (e.g. "`./missing` não existe em HEAD; testados: `.ts .tsx .js .jsx .mjs .cjs .json`, `/index.*`").
+
+
+
+Report the status line once: `IMPORT-CHECK: ok` or `IMPORT-CHECK: <N> achados`.
+
+
+
+---
+
+
 
 
 
