@@ -126,7 +126,7 @@ For suggestion-only items without a code block, RC is still mandatory.
 
 ## Empty States
 
-The two status lines (`IMPORT-CHECK`, `TYPECHECK`) appear in every report, including empty states.
+The two status lines (`IMPORT-CHECK`, `TYPECHECK`) appear in every report, including empty states, placed as in the Final Report Template.
 
 **No blockers, no ressalvas:**
 
@@ -136,6 +136,8 @@ Veredito: Aprovado
 Problemas bloqueantes: 0
 Ressalvas: 0
 Sugestões: [S]
+IMPORT-CHECK: [ok | N achados (B bloqueantes, I incertos)]
+TYPECHECK: [não solicitado | ok | timeout | skipped]
 
 Nenhum problema de alta relevância encontrado.
 ```
@@ -144,6 +146,8 @@ Nenhum problema de alta relevância encontrado.
 
 ```markdown
 Veredito: Aprovado com ressalvas
+IMPORT-CHECK: [ok | N achados (B bloqueantes, I incertos)]
+TYPECHECK: [não solicitado | ok | timeout | skipped]
 
 Nenhum problema bloqueante. [R] ressalva(s) recomendada(s) abaixo.
 ```
@@ -152,6 +156,8 @@ Nenhum problema bloqueante. [R] ressalva(s) recomendada(s) abaixo.
 
 ```markdown
 Veredito: Reprovado
+IMPORT-CHECK: [ok | N achados (B bloqueantes, I incertos)]
+TYPECHECK: [não solicitado | ok | timeout | skipped]
 
 [N] problema(s) bloqueante(s) deve(m) ser corrigido(s) antes do merge.
 ```

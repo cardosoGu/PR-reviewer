@@ -16,7 +16,7 @@
 - Data loss or state corruption risk
 - Documented standard violation that **causes incorrect behavior**
 - Over-engineering with **proven functional impact** (e.g. double-applied plugin causing runtime error)
-- **Broken import** (IMPORT-CHECK): relative/alias path that does not resolve, named export that does not exist, or deleted/renamed file still imported — each with the verification evidence
+- **Broken import** (IMPORT-CHECK): relative/alias path that does not resolve, named export that does not exist, or deleted/renamed file still imported — each with the verification evidence — only when the miss is confirmed (analyze.md §0); ambiguous resolution → `[Incerto]`
 
 **Never bloqueante:** style-only over-engineering, naming, or pattern mismatch without functional impact.
 
@@ -30,7 +30,7 @@ Important improvements worth addressing before or soon after merge:
 - Missing tests for risky logic (suggestion level, not hard blocker)
 - Performance concerns that are not O(n²) on hot paths
 - **Over-engineering:** duplicated infra, unnecessary abstraction layer, middle man with maintenance cost
-- Undeclared external package in a new import (IMPORT-CHECK Step E)
+- Undeclared external package in a new import (IMPORT-CHECK Step E) (`[Incerto]` → Sugestão when the package is plausibly provided by the workspace/runtime)
 
 ### Sugestão (optional — does not change verdict alone)
 
