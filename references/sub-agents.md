@@ -1,148 +1,68 @@
-# Worker Delegation (active when trigger ON)
-
-**Goal:** Reduce wall-clock on large PRs by parallelizing TYPECHECK and optional file analysis. Keep orchestrator context lean — workers return compact summaries only.
-
-Read this file when **trigger ON** (from FETCH) or before offering ANALYZE workers.
-
-**Platform-agnostic:** this file defines worker **contracts** (input, output, constraints). How to spawn workers depends on the runtime — never assume a specific IDE, tool, or API.
-
----
-
-## Worker Contract (all workers)
-
-When parallel delegation is **available** in the runtime:
-
-| Field | Requirement |
-| ----- | ----------- |
-| **Input** | Repo path, task scope, read-only git context |
-| **Output** | Compact summary only (~300 tokens max) — no raw logs, no full diff replay |
-| **Constraints** | Read-only; no repo file edits; no state-changing git commands |
-| **Fallback** | If delegation unavailable → orchestrator runs the same work **inline sequentially** (always valid) |
-
-Workers must **not**: spawn sub-workers, invent standards, skip over-engineering checklist (analyze.md §2.6), or return unstructured dumps.
-
----
-
-## Trigger Recap
-
-**Trigger ON** when any of:
-
-```
-(files > 8 AND diff_lines > 400)
-OR files > 12
-OR diff_lines > 800
-```
-
-| Worker | Activation |
-| ------ | ---------- |
-| **TYPECHECK worker** | **Automatic** when trigger ON and typecheck path detected (see analyze.md §1) |
-| **ANALYZE workers** | **Offer-then-confirm only** — never auto-spawn |
-
----
-
-## TYPECHECK Worker (automatic)
-
-### When
-
-Trigger ON + Level 1 or Level 2 typecheck applies (project script or tsconfig).
-
-### Parallel with STANDARDS
-
-Start after FETCH handoff, in parallel with orchestrator STANDARDS phase.
-
-### Worker receives
-
-```
-TYPECHECK task:
-- Repo path: <absolute>
-- Affected packages: [<package-dir>, ...]
-- Diff files: [<file>, ...]
-- Commands to run: [<pm run typecheck | tsc -p … | tsc -b …>, ...]
-- Rules: read-only; no repo edits; follow analyze.md §1 priority
-```
-
-Resolve commands using analyze.md §1 (script first, then `tsc -p` / `tsc -b` per package).
-
-### Worker runs
-
-Execute the resolved commands from each package directory. **Never** `tsc -- file1 file2`. **Never** `npm run build` unless the project's typecheck script IS build (rare — prefer explicit typecheck scripts).
-
-### Worker returns (compact — max ~300 tokens)
-
-```
-TYPECHECK complete:
-- Level: script | tsc-p | tsc-b | skipped
-- Packages checked: <N>
-- Errors in diff scope: <N>
-  - <file>:<line> — <code> — <message>
-- Status: ok | failed (reason if config broken)
-```
-
-No raw compiler log. Orchestrator merges into ANALYZE findings.
-
-### Fallback
-
-If worker delegation unavailable: orchestrator runs TYPECHECK inline at ANALYZE start (same commands, same rules).
-
----
-
-## ANALYZE Workers (offer-then-confirm)
-
-### When
-
-Scope is **Large** (11+ files OR >500 diff lines) AND user accepts.
-
-**Offer (never auto):**
-
-> Esta PR tem [N] arquivos / [L] linhas no diff. Posso dividir a análise em workers paralelos por lote de arquivos para acelerar. Deseja usar workers?
-
-User must accept. If declined, orchestrator runs ANALYZE sequentially.
-
-### Execution model
-
-```
-Orchestrator
-  ├── FETCH (done)
-  ├── TYPECHECK worker ∥ STANDARDS (orchestrator)
-  ├── [if user accepted] Worker 1 → batch A
-  ├── [if user accepted] Worker 2 → batch B
-  └── Orchestrator → VERDICT + REPORT (merge, dedup, rank, RC)
-```
-
-**Batch size:** ~5 files per worker.
-
-### Worker receives
-
-```
-ANALYZE task:
-- Repo path: <absolute>
-- Base branch: <base>
-- File batch: [<file>, ...]
-- Diff hunks: per file (git diff <base>...HEAD -- <file>)
-- Standards snapshot: <compact markdown>
-- Checklist: analyze.md §2.1–2.6 summary
-- Rules: read-only; RC on every finding; no speculation without [Incerto]
-```
-
-### Worker returns (compact)
-
-```
-Batch <id> complete:
-- Bloqueantes: <file>:<line> — <summary> | RC: <one-line RC>
-- Ressalvas: <file>:<line> — <summary> | RC: <one-line RC>
-- Sugestões: <file>:<line> — <summary> | RC: <one-line RC>
-```
-
-Orchestrator merges into VERDICT phase, deduplicates, refines RC in REPORT if needed.
-
----
-
-## Fallback Matrix
-
-| Condition | Behavior |
-| --------- | -------- |
-| Trigger OFF | Single agent, full workflow inline |
-| User declines ANALYZE workers | Single agent ANALYZE |
-| Worker delegation unavailable | Inline TYPECHECK + sequential ANALYZE |
-| No typecheck path detected | Skip TYPECHECK; manual §2.1 only |
-
+# ANALYZE Workers (very large PRs only)
+
+**Goal:** Cut wall-clock time on very large PRs by splitting the per-file review (analyze.md §2) across parallel workers. Workers **save time, not tokens** — each one starts cold, so total consumption rises (typically 1.5–3×).
+
+Read this file only when the PR has **≥25 filtered files or >1500 diff lines** (from FETCH). Below that, the single agent is cheaper and loses nothing.
+
+**Platform-agnostic:** this file defines a contract (input, output, constraints). How workers are spawned depends on the runtime. If delegation is unavailable, the orchestrator runs everything inline — always valid.
+
+There is **no TYPECHECK worker**: typecheck is a background shell command ([typecheck.md](typecheck.md)).
+
+---
+
+## Offer (never auto-spawn)
+
+> Esta PR tem [N] arquivos / [L] linhas no diff. Posso dividir a revisão por arquivo em [W] workers paralelos — fica mais rápido, mas consome mais tokens no total. Deseja usar workers?
+
+Declined → orchestrator reviews sequentially.
+
+## What stays with the orchestrator
+
+Workers only run the per-file checklist. The orchestrator keeps everything that needs the whole PR:
+
+1. **FETCH, STANDARDS** and the standards snapshot.
+2. **IMPORT-CHECK (analyze.md §0), entirely** — before dispatching. It is batched (a few commands for the whole PR) and Step D needs the global deleted/renamed list.
+3. **Cross-batch pass** after merging: the same helper, plugin or abstraction introduced in 2+ batches; a symbol a worker flagged as dead that another batch uses.
+4. **Re-verification of every Bloqueante** a worker reports — one command each, using the evidence returned. Not reproduced → downgrade to `[Incerto]`.
+5. **VERDICT + REPORT** (dedup, rank, final RC wording).
+
+## Batching
+
+- Group by **module/directory** — a module never splits across workers; files that import each other go together.
+- ~5–8 files per batch; at most 5 workers.
+- If the runtime lets you pick a model, workers may use a faster/cheaper one; the orchestrator keeps the verdict.
+
+## Worker receives
+
+```
+ANALYZE task:
+- Repo path: <absolute>
+- Skill directory: <absolute> — read references/analyze.md §2 and "Finding Quality Rules" only (skip §0, §1)
+- Base ref: <ref>
+- File batch: [<file>, ...] — hunks via `git diff <ref>...HEAD --no-color -- <file>`
+- PR intent: <commit subjects, compact>
+- Standards snapshot: <compact markdown>
+- Rules: read-only (allowlist in references/fetch-diff.md); no repo edits; no sub-workers;
+  §2.6 over-engineering checklist on every file; RC on every finding; uncertain → [Incerto]
+```
+
+## Worker returns (compact — ~400 tokens max, no raw logs or diff replay)
+
+```
+Batch <id> complete (<files reviewed>/<files in batch>):
+- Bloqueante: <file>:<line> — <summary> | Evidência: <command> → <key output line> | RC: <one line>
+- Ressalva: <file>:<line> — <summary> | Evidência: <short> | RC: <one line>
+- Sugestão: <file>:<line> — <summary> | RC: <one line>
+- Cross-file hints: <symbols/helpers this batch introduced or found unused, for the cross-batch pass>
+```
+
+Every Bloqueante **must** carry its evidence, or the orchestrator treats it as `[Incerto]`.
+
+## Fallback Matrix
+
+| Condition | Behavior |
+| --------- | -------- |
+| Below the threshold | Single agent, full workflow inline |
+| User declines | Single agent, sequential ANALYZE |
+| Delegation unavailable | Single agent, sequential ANALYZE |
+| A worker fails or returns garbage | Orchestrator reviews that batch inline |

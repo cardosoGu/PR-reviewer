@@ -1,6 +1,6 @@
 # STANDARDS — Repo Patterns
 
-**Goal:** Build a rule set from documented sources first, then conservative inference by module. Use it during ANALYZE to flag consistency issues — never invent rules.
+**Goal:** Build a rule set from documented sources first, then conservative inference by module. Used in ANALYZE to flag consistency issues — never invent rules.
 
 **Completion criterion:** Compact standards snapshot produced (documented + inferred + skipped dimensions).
 
@@ -9,81 +9,66 @@
 ## Priority Chain
 
 ```
-1. Documented standards (explicit rules)
-2. Conservative inference (same module, 3+ occurrences)
-3. No clear pattern → skip pattern check for that dimension
+1. Documented standards (explicit rules)       → always win on conflict
+2. Conservative inference (same module, 3+ peers agreeing)
+3. No clear pattern → skip that dimension
 ```
-
-**Documented always wins** over inference when they conflict.
 
 ---
 
 ## Step 1: Load Documented Standards
 
-Search and read (if they exist):
+Read (if they exist), extracting only **actionable rules** (naming, imports, error handling, validation, folder structure, API response shapes, test requirements):
 
 | Source | Path patterns |
 | ------ | ------------- |
-| Cursor rules | `.cursor/rules/**`, `AGENTS.md`, `.cursorrules` |
+| Agent / editor rules | `CLAUDE.md`, `AGENTS.md`, `.cursor/rules/**`, `.cursorrules`, `.github/copilot-instructions.md` |
 | Contributing | `CONTRIBUTING.md`, `docs/CONTRIBUTING.md` |
 | Coding standards | `CODING_STANDARDS.md`, `docs/coding-standards.md`, `STYLEGUIDE.md` |
-| Lint config intent | `eslint.config.*`, `.eslintrc*` (rules sections only — do not run ESLint) |
+| Lint config intent | `eslint.config.*`, `.eslintrc*`, `biome.json` (rules sections only — do not run linters) |
 
-Extract **actionable rules**: naming, imports, error handling, validation libraries, folder structure, API response shapes, test requirements.
-
-If none exist, proceed to Step 2 with an empty documented set.
+Long documents: read the headings first and then only the sections relevant to the file types in the diff.
 
 ---
 
 ## Step 2: Conservative Inference (by module)
 
-Group modified files by **module** (same directory or clear package boundary). For each module, infer conventions from peers — **not** per modified file.
+Group modified files by **module** (same directory or clear package boundary). Infer per module, not per file. **Large:** infer for at most 6 modules (those with the most changed lines); the rest use documented standards only.
 
-### Baseline peer read
+### Read peers as excerpts, never whole
 
-| Scope  | Initial peers per module |
-| ------ | ------------------------ |
-| Small  | 1 representative peer |
-| Medium | 2 peers |
-| Large  | 2 peers |
+For each peer, read only what the dimension needs:
 
-Pick peers in the same directory/module that represent typical code (not tests unless only tests exist in module).
+- the **first ~60 lines** (imports, exports, main declarations) — use the Read tool with a line limit (never a full-file read of a peer);
+- plus **targeted greps** for a dimension across the module's peers in one command (e.g. `git grep -nE 'catch *\(|Result<|throw new' HEAD -- <module>/`).
 
-### Adaptive expansion
+### Peer budget
 
-If a dimension is **mixed/inconsistent** after baseline read AND total peers read for that module < 7:
+| Scope | Peers per module | Expansion |
+| ----- | ---------------- | --------- |
+| Small | 3 (excerpts) | none |
+| Medium / Large | 3 (excerpts) | +2 if a dimension is mixed |
 
-1. Read **+2 additional peers** from the same module
-2. Re-evaluate that dimension only
-3. Repeat until consistent (3+ same pattern), max peers reached, or dimension marked **Skipped**
+**Hard cap:** 5 peers per module. A convention needs **3+ peers agreeing**, so a module with fewer than 3 peers infers nothing (documented standards only). Pick typical code from the same directory (tests only if the module has nothing else).
 
-**Hard cap:** 7 peers per module total.
+**Dimensions:**
 
-**Dimensions to infer:**
+| Dimension | How to detect |
+| --------- | ------------- |
+| Import style | `@/` vs `../` vs relative |
+| Naming | camelCase, PascalCase, kebab files |
+| Error handling | try/catch, Result types, error middleware |
+| Validation | Zod, Yup, class-validator, manual |
+| Layer structure | controller → service → repository |
+| Typing | explicit return types, strict null |
 
-| Dimension | How to detect | Valid when |
-| --------- | ------------- | ---------- |
-| Import style | `@/` vs `../` vs relative | 3+ peers same style |
-| Naming | camelCase, PascalCase, kebab files | 3+ peers consistent |
-| Error handling | try/catch, Result types, error middleware | 3+ peers same pattern |
-| Validation | Zod, Yup, class-validator, manual | 3+ peers same library |
-| Layer structure | controller → service → repository | 3+ files follow same layers |
-| Typing | explicit return types, strict null | 3+ peers consistent |
-
-**Confidence rules:**
-
-- **3+ occurrences** of the same pattern → valid inferred convention
-- **1–2 occurrences** → ignore (may be exception)
-- **Mixed after max peers** → Skipped for that dimension
-- **Never infer** from files outside the same module unless imports clearly tie them together
-
-Also read files **imported by** modified files when needed to understand flow (endpoint → handler → service).
+**Confidence:** 3+ peers same pattern → valid convention; 1–2 → ignore (may be an exception); mixed after the cap → **Skipped**. Never infer from outside the module unless imports clearly tie the files together. Files **imported by** modified files may be read to understand flow (endpoint → handler → service).
 
 ---
 
-## Step 3: Build Standards Snapshot
+## Step 3: Standards Snapshot
 
-Produce a compact internal list (~30 lines max):
+Compact internal list (~30 lines max), passed to ANALYZE (and workers); not shown in the report unless asked:
 
 ```markdown
 ## Documented
@@ -96,20 +81,18 @@ Produce a compact internal list (~30 lines max):
 - [dimension]: mixed after N peers (file1, file2, ...)
 ```
 
-Do not include this snapshot in the final report unless the user asks — pass it to ANALYZE and workers.
-
 ---
 
 ## How Violations Are Classified
 
-| Violation type | Typical classification |
-| -------------- | ---------------------- |
+| Violation type | Classification |
+| -------------- | -------------- |
 | Documented rule + causes bug/wrong behavior | **Bloqueante** |
 | Documented rule + style/consistency only | **Ressalva** |
 | Inferred convention + style only | **Ressalva** or **Sugestão** |
-| Inferred convention + likely bug (e.g. missing error handling that peers always have) | **Ressalva** (rarely bloqueante unless impact is clear) |
+| Inferred convention + likely bug (e.g. missing error handling peers always have) | **Ressalva** (bloqueante only with clear impact) |
 
-**Default:** pattern violations are **not blockers** unless they cause functional or security impact.
+Pattern violations are **not blockers** unless they cause functional or security impact.
 
 ---
 
@@ -119,8 +102,4 @@ Do not include this snapshot in the final report unless the user asks — pass i
 [Fase 2/5] STANDARDS — <D> regras documentadas, <I> convenções inferidas (<M> módulos)
 ```
 
-If both are zero:
-
-```
-[Fase 2/5] STANDARDS — nenhum padrão claro detectado; análise focará em lógica, segurança e over-engineering
-```
+If both are zero: `[Fase 2/5] STANDARDS — nenhum padrão claro detectado; análise focará em lógica, segurança e over-engineering`

@@ -1,8 +1,8 @@
 # FETCH — Obtain Diff
 
-**Goal:** Resolve base branch, obtain the PR diff (read-only), classify scope, compute trigger, and produce the filtered file list for analysis.
+**Goal:** Resolve the base branch, obtain the PR diff (read-only), filter noise, classify scope, and hand off the file list and PR intent.
 
-**Completion criterion:** Base branch verified, filtered file list non-empty (or stop with message), scope + trigger + diff handoff mode assigned.
+**Completion criterion:** Base verified, filtered file list non-empty (or stop with message), scope and diff handoff mode assigned.
 
 ---
 
@@ -10,138 +10,100 @@
 
 ### 1. Resolve base branch
 
-**Override (soft):** If the user explicitly mentions a base branch (e.g. `base=develop`, `branch base: main`, `comparar com jobs`), use it.
+**Base name `<base>`:** always the bare branch name (`main`, never `origin/main`). Strip any `origin/` prefix from `symbolic-ref` or `branch -r` output.
 
-**Auto-detect (default):** Try in order until one resolves:
+**Override:** if the user names a base (`base=develop`, `branch base: main`, `comparar com jobs`), use it.
 
-1. `main`
-2. `master`
-3. Remote default from `origin/HEAD`
+**Auto-detect:** first that resolves of `main`, `master`, then the remote default from `git symbolic-ref refs/remotes/origin/HEAD` (fallback: `git branch -r`, look for `origin/HEAD -> origin/<name>`).
 
-**Cross-platform detection for origin/HEAD:**
+**Fetch first (the only network command allowed).** Run `git remote`:
 
-```bash
-git symbolic-ref refs/remotes/origin/HEAD
-```
+- If `origin` is listed: `git fetch --no-tags origin <base>`. Exactly one branch, only `origin`, never `--all`, `--prune`, `--tags`. It updates only the remote-tracking ref (no working tree, index or local branch change). If it fails (offline, auth), continue and emit once: `Aviso: origin/<base> pode estar desatualizada (fetch falhou).`
+- No `origin` remote: skip the fetch, no warning.
 
-If that fails, try:
-
-```bash
-git branch -r
-```
-
-Look for `origin/HEAD -> origin/main` or `origin/master`.
-
-**Verify:** `git rev-parse <base>` must succeed.
+**Resolve `<ref>` (after the fetch):** `git rev-parse --verify --quiet origin/<base>` → `<ref>` = `origin/<base>`. Otherwise `git rev-parse --verify --quiet <base>` → `<ref>` = `<base>` and note "sem remoto: usando base local". If both fail, stop: base `<base>` not found. Use `<ref>` in **every** command below.
 
 ### 2. Check current branch
 
-```bash
-git branch --show-current
-```
+`git branch --show-current` — if it equals `<base>`, stop: no feature diff to review against itself.
 
-If current branch is `main` or `master` (same as base), stop and tell the user there is no feature diff to review against itself.
-
-### 3. Obtain diff (three-dot, merge-base)
+### 3. List changes and PR intent (no diff content yet)
 
 ```bash
-git diff <base>...HEAD --no-color
+git diff <ref>...HEAD --name-status -M --no-color
 ```
 
 ```bash
-git diff <base>...HEAD --name-only --no-color
+git diff <ref>...HEAD --numstat -M --no-color
 ```
 
 ```bash
-git log <base>..HEAD --oneline
+git log <ref>..HEAD --no-merges -n 30 --format='- %s%n%w(0,2,2)%b'
 ```
 
-Count **diff_lines** from the full diff output (added + removed lines, excluding headers).
+- `--name-status -M` feeds the IMPORT-CHECK reverse check (deleted/renamed files).
+- `--numstat` gives added/removed lines per file (`-` = binary) without loading the diff.
+- The commit subjects and bodies are the **PR intent** used in ANALYZE §2.2 (last 30 commits; summarize long bodies to a few lines). Commit count: `git rev-list --count <ref>..HEAD`. If the user pasted a PR description, it takes precedence.
 
-Three-dot compares against the merge-base — same semantics as a typical PR.
-
-**Scope:** committed changes on the current branch only. Uncommitted/staged local changes are **not** included.
+Three-dot compares against the merge-base — same semantics as a PR. Only committed changes are reviewed (uncommitted/staged changes are not).
 
 ### 4. Filter ignored paths
 
-Remove from the file list:
+Remove before counting anything:
 
-- `node_modules/**`
-- `vendor/**`
-- `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`
-- Binary files (`.png`, `.jpg`, `.gif`, `.ico`, `.woff`, `.pdf`, etc.) — note in report, do not analyze content
-- Generated-only paths if clearly marked (e.g. `dist/`, `build/`) — skip unless the diff suggests hand-edited generated code
+- Dependencies: `node_modules/**`, `vendor/**`
+- Lockfiles: `package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock`, `pnpm-lock.yaml`, `bun.lockb`, `bun.lock`, `composer.lock`, `Cargo.lock`, `poetry.lock`, `Gemfile.lock`, `go.sum`
+- Generated / build output: `dist/`, `build/`, `out/`, `coverage/`, `.next/`, `*.min.js`, `*.min.css`, `*.map`, `__snapshots__/`, `*.snap` — skip unless the diff suggests hand-edited generated code
+- Binary files (numstat `-`, or `.png`, `.jpg`, `.gif`, `.ico`, `.woff`, `.pdf`, …) — noted in the report, content not analyzed
 
 If the filtered list is empty, stop: "Nenhum arquivo relevante no diff."
 
-### 5. Classify scope and trigger
+**diff_lines** = sum of added + removed from `--numstat` over the **filtered** files only (a lockfile never inflates the scope).
 
-**Scope** (use filtered file count and diff_lines):
+### 5. Classify scope
 
-| Scope  | Condition |
-| ------ | --------- |
-| Small  | ≤3 files AND ≤100 diff lines |
-| Medium | 4–10 files OR ≤500 diff lines (and not Large) |
-| Large  | 11+ files OR >500 diff lines |
+| Scope | Condition | Execution |
+| ----- | --------- | --------- |
+| Small | ≤3 files AND ≤100 diff lines | Single agent; full diff; STANDARDS light |
+| Medium | Not Small and not Large | Single agent; full diff if diff_lines ≤400, else hunks per file |
+| Large | 11+ files OR >500 diff lines | Single agent, hunks per file; ANALYZE workers offered only at ≥25 files or >1500 diff lines ([sub-agents.md](sub-agents.md)) |
 
-**Trigger ON** when any of:
+### 6. Diff handoff
 
-```
-(files > 8 AND diff_lines > 400)
-OR files > 12
-OR diff_lines > 800
-```
-
-Pass `scope`, `trigger`, `file_count`, and `diff_lines` to all later phases.
-
-### 6. Diff handoff mode
-
-| Scope  | Handoff to ANALYZE |
-| ------ | ------------------ |
-| Small  | Full diff text allowed (compact PRs) |
-| Medium | Full diff text allowed if diff_lines ≤400; otherwise hunks per file |
-| Large  | **Hunks per file only** — never pass full diff to STANDARDS or ANALYZE at once |
-
-For hunks per file:
+Always restrict diff content to the filtered files:
 
 ```bash
-git diff <base>...HEAD --no-color -- <file>
+git diff <ref>...HEAD --no-color -- <filtered-file-1> <filtered-file-2>
 ```
 
-Read each file's hunks during ANALYZE only — do not accumulate full diff in context during STANDARDS.
+Hunks per file (Large, or Medium >400 lines): `git diff <ref>...HEAD --no-color -- <file>`, read during ANALYZE only — never accumulate the full diff in context during STANDARDS.
 
-### 7. Hand off to STANDARDS
+### 7. Hand off
 
-Pass forward:
-
-- Base branch name
-- Current branch name
-- Commit list (one-liners)
-- Filtered file list
-- `scope`, `trigger`, `file_count`, `diff_lines`
-- Diff handoff mode (full vs hunks)
-
-Do **not** pass full diff text into STANDARDS on Large PRs.
+Pass forward: `<base>`, `<ref>` (+ short sha via `git rev-parse --short <ref>`), current branch, commit count and PR intent, filtered file list, ignored-file count, deleted/renamed list, `scope`, `file_count`, `diff_lines`, handoff mode.
 
 ---
 
 ## Allowed Git Commands
 
+This is the **single allowlist** for the whole review (SKILL.md refers here). Anything not listed is forbidden.
+
 | Command | Purpose |
 | ------- | ------- |
-| `git branch --show-current` | Current branch |
-| `git rev-parse <ref>` | Verify ref exists |
+| `git remote`, `git branch --show-current`, `git branch -r` | Remote / branch detection |
 | `git symbolic-ref refs/remotes/origin/HEAD` | Default remote branch |
-| `git branch -r` | List remote branches |
-| `git diff <base>...HEAD` | Diff content |
-| `git diff <base>...HEAD --name-only` | Changed files |
-| `git diff <base>...HEAD -- <file>` | Per-file hunks |
-| `git log <base>..HEAD --oneline` | Commits in branch |
-| `git show`, `git status` | Context when needed |
+| `git rev-parse --verify --quiet <ref>`, `git rev-parse --short <ref>` | Resolve ref, short sha |
+| `git fetch --no-tags origin <base>` | **Only** network command: refresh the base's remote-tracking ref |
+| `git diff <ref>...HEAD [--name-status -M \| --numstat \| -U0] [-- <paths>]` | Changes, counts, hunks |
+| `git log <ref>..HEAD`, `git rev-list --count <ref>..HEAD` | Commits and PR intent |
+| `git ls-tree [-r] --name-only HEAD [<dir>/]` — **always piped into a filter** | File existence at HEAD (IMPORT-CHECK) |
+| `git grep … HEAD -- <paths>` | Export / reference search at HEAD |
+| `git show HEAD:<path>` | Read a file at HEAD without checkout |
+| `git status` | Context when needed |
 
-## Forbidden Git Commands
+Non-git commands: read-only filters (`grep`, `head`, `Select-String`) and, **only when the user asked for typecheck**, the commands in [typecheck.md](typecheck.md).
 
-`push`, `commit`, `checkout`, `switch`, `reset`, `rebase`, `merge`, `branch -D`, `stash`, `clean`, `fetch` (read-only without network side effects)
+**Forbidden:** `push`, `pull`, `commit`, `checkout`, `switch`, `reset`, `rebase`, `merge`, `branch -D`, `stash`, `clean`, `tag`, any `fetch` other than the one above, and any command that writes to the repository or to GitHub.
 
 ---
 
@@ -150,11 +112,7 @@ Do **not** pass full diff text into STANDARDS on Large PRs.
 Emit once when FETCH completes:
 
 ```
-[Fase 1/5] FETCH — diff obtido: <N> arquivos, <L> linhas vs <base> (<scope>, trigger <ON|OFF>)
+[Fase 1/5] FETCH — diff obtido: <N> arquivos (<X> ignorados), <L> linhas vs origin/<base>@<sha curto> (<scope>)
 ```
 
-If trigger ON, add:
-
-```
-Worker TYPECHECK será ativado em paralelo com STANDARDS.
-```
+If `<ref>` is the local base, use `<base>@<sha curto>`. Omit `(<X> ignorados)` when X = 0.
