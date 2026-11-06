@@ -256,7 +256,9 @@ Report the status line once: `IMPORT-CHECK: ok` or `IMPORT-CHECK: <N> achados (<
 
 
 
-Run when a typecheck path exists for affected packages. Language-agnostic detection; **v1 implements TypeScript fully** — other stacks skip with a note (see SPEC roadmap).
+**Opt-in.** TYPECHECK does **not** run by default (it is slow on heavy repos and IMPORT-CHECK §0 already catches the build-breaking import class). Run it **only** when the user explicitly asks (e.g. "rodar typecheck", "run typecheck"). Language-agnostic detection; **v1 implements TypeScript fully** — other stacks skip with a note (see SPEC roadmap).
+
+**When requested:** run in the **background** with a **120s timeout**. If it exceeds the timeout, kill it, continue the review, and report `TYPECHECK: timeout` (not a finding).
 
 
 
@@ -289,6 +291,8 @@ Run when a typecheck path exists for affected packages. Language-agnostic detect
 - **Never** install tools or create/edit files in the repo under review
 
 - **Do not run ESLint**
+
+- **Never** run TYPECHECK unless the user asked for it
 
 
 
@@ -410,13 +414,19 @@ Continue with manual typing review (§2.1).
 
 
 
-| Condition | Who runs TYPECHECK |
+| Condition | Behavior |
 
-| --------- | ------------------ |
+| --------- | -------- |
 
-| Small scope OR trigger OFF | Orchestrator inline at ANALYZE start |
+| User did not ask | Do not run. Report `TYPECHECK: não solicitado` |
 
-| Trigger ON | TYPECHECK worker in parallel with STANDARDS (see [sub-agents.md](sub-agents.md)) |
+| User asked | Run in background, 120s timeout, via orchestrator (or TYPECHECK worker if delegation is available — see [sub-agents.md](sub-agents.md)) |
+
+| Timeout | Report `TYPECHECK: timeout`; review continues |
+
+| Nothing detected (Level 3) | Report `TYPECHECK: skipped` |
+
+| Completed | Report `TYPECHECK: ok` or its errors as findings |
 
 
 

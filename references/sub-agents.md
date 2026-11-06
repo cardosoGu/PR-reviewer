@@ -35,16 +35,16 @@ OR diff_lines > 800
 
 | Worker | Activation |
 | ------ | ---------- |
-| **TYPECHECK worker** | **Automatic** when trigger ON and typecheck path detected (see analyze.md §1) |
+| **TYPECHECK worker** | **Only when the user asked for typecheck** (opt-in) and typecheck path detected (see analyze.md §1); never automatic |
 | **ANALYZE workers** | **Offer-then-confirm only** — never auto-spawn |
 
 ---
 
-## TYPECHECK Worker (automatic)
+## TYPECHECK Worker (opt-in)
 
 ### When
 
-Trigger ON + Level 1 or Level 2 typecheck applies (project script or tsconfig).
+User asked for typecheck + Level 1 or Level 2 applies (project script or tsconfig). Trigger ON alone does **not** activate this worker.
 
 ### Parallel with STANDARDS
 
@@ -65,7 +65,7 @@ Resolve commands using analyze.md §1 (script first, then `tsc -p` / `tsc -b` pe
 
 ### Worker runs
 
-Execute the resolved commands from each package directory. **Never** `tsc -- file1 file2`. **Never** `npm run build` unless the project's typecheck script IS build (rare — prefer explicit typecheck scripts).
+Execute the resolved commands from each package directory. **Never** `tsc -- file1 file2`. **Never** `npm run build` unless the project's typecheck script IS build (rare — prefer explicit typecheck scripts). Run with a **120s timeout**; on timeout return `Status: timeout`.
 
 ### Worker returns (compact — max ~300 tokens)
 
@@ -75,14 +75,14 @@ TYPECHECK complete:
 - Packages checked: <N>
 - Errors in diff scope: <N>
   - <file>:<line> — <code> — <message>
-- Status: ok | failed (reason if config broken)
+- Status: ok | failed (reason if config broken) | timeout
 ```
 
 No raw compiler log. Orchestrator merges into ANALYZE findings.
 
 ### Fallback
 
-If worker delegation unavailable: orchestrator runs TYPECHECK inline at ANALYZE start (same commands, same rules).
+If worker delegation unavailable and the user asked for typecheck: orchestrator runs TYPECHECK inline in the background at ANALYZE start (same commands, same rules, 120s timeout). Otherwise skip it.
 
 ---
 
@@ -103,7 +103,7 @@ User must accept. If declined, orchestrator runs ANALYZE sequentially.
 ```
 Orchestrator
   ├── FETCH (done)
-  ├── TYPECHECK worker ∥ STANDARDS (orchestrator)
+  ├── [only if user asked] TYPECHECK worker ∥ STANDARDS (orchestrator)
   ├── [if user accepted] Worker 1 → batch A
   ├── [if user accepted] Worker 2 → batch B
   └── Orchestrator → VERDICT + REPORT (merge, dedup, rank, RC)
@@ -143,6 +143,7 @@ Orchestrator merges into VERDICT phase, deduplicates, refines RC in REPORT if ne
 | --------- | -------- |
 | Trigger OFF | Single agent, full workflow inline |
 | User declines ANALYZE workers | Single agent ANALYZE |
-| Worker delegation unavailable | Inline TYPECHECK + sequential ANALYZE |
+| Worker delegation unavailable | Inline TYPECHECK (only if asked) + sequential ANALYZE |
+| TYPECHECK not requested | Skip TYPECHECK; IMPORT-CHECK §0 and manual §2.1 only |
 | No typecheck path detected | Skip TYPECHECK; manual §2.1 only |
 
