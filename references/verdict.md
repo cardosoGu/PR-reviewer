@@ -16,6 +16,7 @@
 - Data loss or state corruption risk
 - Documented standard violation that **causes incorrect behavior**
 - Over-engineering with **proven functional impact** (e.g. double-applied plugin causing runtime error)
+- **Broken import** (IMPORT-CHECK): relative/alias path that does not resolve, named export that does not exist, or deleted/renamed file still imported — each with the verification evidence
 
 **Never bloqueante:** style-only over-engineering, naming, or pattern mismatch without functional impact.
 
@@ -29,6 +30,7 @@ Important improvements worth addressing before or soon after merge:
 - Missing tests for risky logic (suggestion level, not hard blocker)
 - Performance concerns that are not O(n²) on hot paths
 - **Over-engineering:** duplicated infra, unnecessary abstraction layer, middle man with maintenance cost
+- Undeclared external package in a new import (IMPORT-CHECK Step E)
 
 ### Sugestão (optional — does not change verdict alone)
 
@@ -39,15 +41,19 @@ Minor nice-to-haves:
 - Optional extractions
 - Low-impact performance notes
 - **Over-engineering:** future-only params, minor wrapper, `[Incerto]` on OE signal
+- Ambiguous import resolution marked `[Incerto]` (IMPORT-CHECK)
 
 ---
 
 ## Over-engineering Classification
 
+Every over-engineering finding **must carry the evidence** of its verification (analyze.md §2.6). Without evidence there is no finding.
+
 | Signal | Typical severity |
 | ------ | ---------------- |
-| Duplicated plugin/middleware (e.g. on schema extending base that already applies it) | **Ressalva** |
-| Abstraction layer unused in module | **Ressalva** |
+| Duplicated plugin/middleware (base already applies it — snippet cited) | **Ressalva** |
+| Abstraction layer unused in module (usage count cited) | **Ressalva** |
+| Dead export with 0 references (grep result cited) | **Ressalva** |
 | Middle man / unnecessary wrapper | **Ressalva** or **Sugestão** |
 | Future-only flag or param | **Sugestão** |
 | `[Incerto]` on OE | **Sugestão** |

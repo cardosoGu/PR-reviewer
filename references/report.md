@@ -50,6 +50,7 @@ RC: It looks like [concrete observation with symbol/path/class] — could you ve
 | Tone | Question, not accusation — "Parece que…" / "It looks like…" |
 | Content | Name symbol, import, path, extends/implements, or duplicate relationship |
 | `[Incerto]` | "Parece que… poderia confirmar se…?" / "It looks like… could you confirm whether…?" |
+| Evidence | When the finding comes from IMPORT-CHECK or an over-engineering signal, the RC names the evidence (path tested, grep result, base-class snippet) |
 | Distinct from | "Por que…" / "Sugestão" stay technical; RC is what you paste on the PR |
 
 ### RC examples
@@ -60,6 +61,10 @@ RC: Parece que esse objeto importado não existe em `globals/MongoDB`, poderia v
 RC: O plugin `aggregatePaginate` já é aplicado em `baseSchema`, que `RankingGoalsSchemaClass` estende — poderia verificar se é necessário aplicar novamente?
 
 RC: Parece que `ProposalSituationRecordsErros` importado não existe em `ProposalSituationRecords/ProposalSituationRecords`, poderia verificar por gentileza?
+
+RC: Parece que `src/old.ts` foi removido neste PR mas ainda é importado em `src/user.ts:1`, poderia verificar por favor?
+
+RC: Parece que o export `neverUsed` em `src/dead.ts` não tem nenhuma referência no repositório, poderia verificar se ainda é necessário?
 ```
 
 ---
@@ -74,6 +79,8 @@ Ressalvas: [R]
 Sugestões: [S]
 
 Branch: [current] → base: [base] ([M] commits, [F] arquivos)
+IMPORT-CHECK: [ok | N achados (B bloqueantes, I incertos)]
+TYPECHECK: [não solicitado | ok | timeout | skipped]
 
 ---
 
@@ -118,6 +125,8 @@ For suggestion-only items without a code block, RC is still mandatory.
 ---
 
 ## Empty States
+
+The two status lines (`IMPORT-CHECK`, `TYPECHECK`) appear in every report, including empty states.
 
 **No blockers, no ressalvas:**
 
