@@ -18,14 +18,14 @@
 
 ## Step 1: Load Documented Standards
 
-Read (if they exist), extracting only **actionable rules** (naming, imports, error handling, validation, folder structure, API response shapes, test requirements):
+`fetch-context.mjs` already downloaded the documents that exist into `<dir>/head/` (root docs, `.cursor/rules/*` up to 5, and `CLAUDE.md` / `AGENTS.md` of every touched directory and its ancestors). Read them from there, extracting only **actionable rules** (naming, imports, error handling, validation, folder structure, API response shapes, test requirements):
 
 | Source | Path patterns |
 | ------ | ------------- |
 | Agent / editor rules | `CLAUDE.md`, `AGENTS.md`, `.cursor/rules/**`, `.cursorrules`, `.github/copilot-instructions.md` |
 | Contributing | `CONTRIBUTING.md`, `docs/CONTRIBUTING.md` |
 | Coding standards | `CODING_STANDARDS.md`, `docs/coding-standards.md`, `STYLEGUIDE.md` |
-| Lint config intent | `eslint.config.*`, `.eslintrc*`, `biome.json` (rules sections only — do not run linters) |
+| Lint config intent | `eslint.config.*`, `.eslintrc*`, `biome.json` — only if you requested it in `fetch-context.mjs` (counts toward the 10 files); rules sections only, never run linters |
 
 Long documents: read the headings first and then only the sections relevant to the file types in the diff.
 
@@ -33,14 +33,14 @@ Long documents: read the headings first and then only the sections relevant to t
 
 ## Step 2: Conservative Inference (by module)
 
-Group modified files by **module** (same directory or clear package boundary). Infer per module, not per file. **Large:** infer for at most 6 modules (those with the most changed lines); the rest use documented standards only.
+Group modified files by **module** (same directory or clear package boundary). Infer per module, not per file. **Large:** infer for at most 6 modules (those with the most changed lines); the rest use documented standards only. Peers come from the module mirror in `<dir>/head/<module>/` (capped at 60 files / 2 MB for the whole PR); a module with fewer than 3 files in the mirror infers nothing.
 
 ### Read peers as excerpts, never whole
 
 For each peer, read only what the dimension needs:
 
 - the **first ~60 lines** (imports, exports, main declarations) — use the Read tool with a line limit (never a full-file read of a peer);
-- plus **targeted greps** for a dimension across the module's peers in one command (e.g. `git grep -nE 'catch *\(|Result<|throw new' HEAD -- <module>/`).
+- plus **targeted greps** for a dimension across the module's peers in one command (e.g. `grep -rnE 'catch *\(|Result<|throw new' <dir>/head/<module>/`).
 
 ### Peer budget
 
@@ -68,7 +68,7 @@ For each peer, read only what the dimension needs:
 
 ## Step 3: Standards Snapshot
 
-Compact internal list (~30 lines max), passed to ANALYZE (and workers); not shown in the report unless asked:
+Compact internal list (~30 lines max), passed to PASSADA 2; not shown in the report unless asked:
 
 ```markdown
 ## Documented
@@ -99,7 +99,7 @@ Pattern violations are **not blockers** unless they cause functional or security
 ## Progress Message
 
 ```
-[Fase 2/5] STANDARDS — <D> regras documentadas, <I> convenções inferidas (<M> módulos)
+[Fase 3/5] CONTEXTO — <D> regras documentadas, <I> convenções inferidas (<M> módulos)
 ```
 
-If both are zero: `[Fase 2/5] STANDARDS — nenhum padrão claro detectado; análise focará em lógica, segurança e over-engineering`
+If both are zero: `[Fase 3/5] CONTEXTO — nenhum padrão claro detectado; análise focará em lógica, segurança e over-engineering`
