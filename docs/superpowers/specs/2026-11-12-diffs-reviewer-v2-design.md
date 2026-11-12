@@ -25,9 +25,8 @@ Medição que embasa o desenho (PR #1 deste repo, 13 arquivos, diff ~105 KB): ca
 - Coleta 100% via `gh` (sem repo local, sem checkout, sem clone).
 - Dois scripts Node: `scripts/fetch-pr.mjs` e `scripts/fetch-context.mjs`.
 - IMPORT-CHECK determinístico dentro de `fetch-context.mjs`.
-- Status de CI via `gh pr checks` (informativo).
 - Análise por agente único em duas passadas + autovalidação.
-- Relatório no formato atual (RC por achado, veredito) + linhas de CI, cobertura e limites.
+- Relatório no formato atual (RC por achado, veredito) + linhas de cobertura e limites.
 
 **Sai**
 
@@ -65,7 +64,6 @@ Um turno. Faz em paralelo:
 | `gh pr view <link> --json title,body,state,isDraft,baseRefName,headRefOid,headRepository,headRepositoryOwner,commits,url,number` | intent, estado, sha do head |
 | `gh api repos/{o}/{r}/pulls/{n}/files --paginate` | lista, status (`added/modified/removed/renamed`), `previous_filename`, additions/deletions, `patch` por arquivo |
 | `gh api repos/{o}/{r}/git/trees/{headSha}?recursive=1` | lista de caminhos do head (para IMPORT-CHECK e espelho) |
-| `gh pr checks <link> --json name,state,bucket` | status de CI |
 
 `{o}/{r}` é o repositório **base** da PR (o do link). Para PR de fork, tree e contents usam o repositório do head (`headRepositoryOwner/headRepository`) com `headRefOid`.
 
@@ -91,7 +89,6 @@ Testes (`*.test.*`, `*.spec.*`, `__tests__/`) **não são excluídos**: o diff �
 ```
 PR #<n> <title> — <state> — base <baseRef> ← head <sha7>
 Intent: <body resumido em ≤8 linhas; se vazio, assuntos dos commits (≤10)>
-CI: <passando X/Y | falhando: nomes | pendente | nenhum check>
 Arquivos (<N> analisados, <X> ignorados, <L> linhas, escopo <S>):
   M src/a.ts +12 -3
   D src/old.ts
@@ -161,7 +158,6 @@ Formato atual de `report.md` (severidades, veredito, RC por achado, dedup/rankin
 - Remove referências a TYPECHECK.
 - Cabeçalho inclui link da PR e `sha7` do head.
 - Linhas fixas ao final:
-  - `CI: …` (copiada da fase 1). Check falhando é citado, mas não vira Bloqueante sozinho (o CI do projeto não é confiável); o modelo pode promover se o nome/log indicar build quebrado.
   - `Cobertura: <analisados> analisados, <ignorados> ignorados por regra, <não alcançados> não alcançados (<lista>)`
   - `Limites: tipos não verificados (sem typecheck); importadores fora da diff/espelho de arquivos removidos não verificados` (+ `contexto truncado: …` quando houver teto atingido).
 
@@ -170,7 +166,7 @@ Formato atual de `report.md` (severidades, veredito, RC por achado, dedup/rankin
 Comandos permitidos, todos de leitura:
 
 - `node <skill>/scripts/fetch-pr.mjs …`, `node <skill>/scripts/fetch-context.mjs …`
-- Dentro dos scripts: `gh pr view`, `gh pr diff`, `gh pr checks`, `gh api` **somente GET** (sem `-X`, `-f`, `-F`, `--input`).
+- Dentro dos scripts: `gh pr view`, `gh pr diff`, `gh api` **somente GET** (sem `-X`, `-f`, `-F`, `--input`).
 - Fora dos scripts: leitura de arquivos em `<tmp>/pr-<n>/` e `grep`/`Select-String` sobre eles.
 
 Proibido: `gh pr comment|review|merge|edit|close|ready`, `gh api` com método diferente de GET, qualquer comando git que escreva, e escrita fora de `<tmp>/pr-<n>/`. Os scripts validam o link (`https://github.com/<o>/<r>/pull/<n>`) e recusam qualquer outro formato.
@@ -187,7 +183,6 @@ Os scripts não apagam o diretório ao final (permite releitura na mesma sessão
 | Tree `truncated: true` | IMPORT-CHECK B vira `[Incerto]` para caminhos não encontrados; aviso em Limites |
 | `patch` ausente e `gh pr diff` falha (diff gigante) | arquivo em "não alcançados" |
 | Falha de rede numa leitura de contexto | arquivo listado como fora do teto; achados dependentes viram `[Incerto]` |
-| `gh pr checks` sem checks (sai ≠ 0 com "no checks reported") | não é erro: `CI: nenhum check` |
 | 0 arquivos após filtro | script imprime "Nenhum arquivo relevante na PR." e sai código 3; skill encerra |
 
 ## 7. Mudanças nos arquivos
@@ -200,7 +195,7 @@ Os scripts não apagam o diretório ao final (permite releitura na mesma sessão
 | `references/fetch-diff.md` | reescrito como `references/fetch.md`: como rodar os scripts, ler a saída, estado/`--force` |
 | `references/analyze.md` | §0 vira "ler saída do IMPORT-CHECK"; remove §1 TYPECHECK; duas passadas, autovalidação, não flagar; greps sobre `head/` |
 | `references/standards.md` | peers e docs vêm de `head/` |
-| `references/report.md` | remove TYPECHECK; linhas CI/Cobertura/Limites; link da PR |
+| `references/report.md` | remove TYPECHECK; linhas Cobertura/Limites; link da PR |
 | `references/typecheck.md`, `references/sub-agents.md` | removidos |
 | `README.md`, `SPEC.md` | atualizados para v2; changelog 2.0.0 |
 | `tests/check-recipes.js` | substituído por testes dos scripts com fixtures locais (diffs, tree e arquivos simulados; sem rede) |
@@ -217,5 +212,5 @@ Os scripts não apagam o diretório ao final (permite releitura na mesma sessão
 - Nenhuma chamada que escreva no GitHub ou no repo; nada escrito fora de `<tmp>/pr-<n>`.
 - PR fechada/mergeada/draft para e pede confirmação.
 - Nenhum diff, tree ou JSON cru no contexto do modelo.
-- Relatório sempre com CI, Cobertura e Limites.
+- Relatório sempre com Cobertura e Limites.
 - Testes dos scripts passando.
