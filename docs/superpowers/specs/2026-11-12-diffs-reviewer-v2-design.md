@@ -187,6 +187,7 @@ Os scripts não apagam o diretório ao final (permite releitura na mesma sessão
 | Tree `truncated: true` | IMPORT-CHECK B vira `[Incerto]` para caminhos não encontrados; aviso em Limites |
 | `patch` ausente e `gh pr diff` falha (diff gigante) | arquivo em "não alcançados" |
 | Falha de rede numa leitura de contexto | arquivo listado como fora do teto; achados dependentes viram `[Incerto]` |
+| `gh pr checks` sem checks (sai ≠ 0 com "no checks reported") | não é erro: `CI: nenhum check` |
 | 0 arquivos após filtro | script imprime "Nenhum arquivo relevante na PR." e sai código 3; skill encerra |
 
 ## 7. Mudanças nos arquivos
