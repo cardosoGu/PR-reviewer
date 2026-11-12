@@ -10,12 +10,12 @@
 
 ### Bloqueante (→ Reprovado)
 
-- Type/typecheck errors in diff files that break the build
+- Type errors evident in the diff that break the build (manual reading — no typecheck runs)
 - Logic bugs with clear functional impact (including a confirmed intent mismatch)
 - Serious security vulnerabilities; data loss or state corruption risk
 - Documented standard violation that **causes incorrect behavior**
 - Over-engineering with **proven functional impact** (e.g. double-applied plugin causing a runtime error)
-- **Broken import** (IMPORT-CHECK, confirmed miss only — analyze.md §0): path that does not resolve, named export that does not exist, deleted/renamed file still imported — with its evidence
+- **Broken import** (IMPORT-CHECK `[Bloqueante]` lines from `fetch-context.mjs`): path that does not resolve, named export that does not exist, deleted/renamed file still imported — with its evidence
 
 **Never bloqueante:** style-only over-engineering, naming, or pattern mismatch without functional impact.
 
@@ -25,7 +25,7 @@
 - Pattern mismatches and documented style violations without bug impact
 - Performance concerns that are not O(n²) on hot paths
 - **Over-engineering:** duplicated infra, unnecessary abstraction layer, middle man with maintenance cost
-- Undeclared external package in a new import (IMPORT-CHECK Step E)
+- Undeclared external package in a new import (IMPORT-CHECK `[Ressalva]`)
 
 ### Sugestão (optional — never changes the verdict alone)
 
@@ -33,13 +33,14 @@
 - **Over-engineering:** future-only params, minor wrapper
 - Any `[Incerto]` finding (IMPORT-CHECK or over-engineering)
 
-### Over-engineering (evidence is mandatory — analyze.md §2.6)
+### Over-engineering (evidence is mandatory — analyze.md §2.3)
 
 | Signal | Severity |
 | ------ | -------- |
 | Duplicated plugin/middleware (base snippet cited) | **Ressalva** |
 | Abstraction layer unused in module (usage count cited) | **Ressalva** |
-| Dead export with 0 references (grep cited; exclusions in analyze.md §2.6) | **Ressalva** |
+| Dead module-private export with 0 references in the mirror (grep cited; exclusions in analyze.md §2.3) | **Ressalva** |
+| Public export with 0 references in the mirror (repo-wide not verifiable) | **Sugestão** `[Incerto]` |
 | Middle man / unnecessary wrapper | **Ressalva** or **Sugestão** |
 | Future-only flag or param; `[Incerto]` signal | **Sugestão** |
 | Proven runtime/build break | **Bloqueante** |
@@ -59,7 +60,7 @@
 **Dedup and rank:** merge findings with the same line/root cause (one RC, combined); sort bloqueantes security > data loss > logic > types; ressalvas consistency > over-engineering > readability.
 
 ```
-[Fase 4/5] VERDICT — <veredito>: <N> bloqueantes, <R> ressalvas, <S> sugestões
+[Fase 5/5] VERDICT — <veredito>: <N> bloqueantes, <R> ressalvas, <S> sugestões
 ```
 
 ---
@@ -88,7 +89,7 @@ Examples:
 RC: Parece que `ProposalSituationRecordsErros` importado não existe em `ProposalSituationRecords/ProposalSituationRecords`, poderia verificar por gentileza?
 RC: O plugin `aggregatePaginate` já é aplicado em `baseSchema`, que `RankingGoalsSchemaClass` estende — poderia verificar se é necessário aplicar novamente?
 RC: Parece que `src/old.ts` foi removido neste PR mas ainda é importado em `src/user.ts:1`, poderia verificar por favor?
-RC: Parece que o export `neverUsed` em `src/dead.ts` não tem nenhuma referência no repositório, poderia verificar se ainda é necessário?
+RC: Parece que o export `neverUsed` em `src/dead.ts` não tem nenhuma referência no módulo, poderia verificar se ainda é necessário?
 ```
 
 ---
@@ -108,9 +109,8 @@ Problemas bloqueantes: [N]
 Ressalvas: [R]
 Sugestões: [S]
 
-Branch: [current] → base: [base] ([M] commits, [F] arquivos)
+PR: [link] — [título] (head [sha7], [F] arquivos, escopo [S])
 IMPORT-CHECK: [ok | N achados (B bloqueantes, R ressalvas, I incertos)]
-TYPECHECK: [não solicitado | ok | <N> erros | timeout | skipped | falhou (config)]
 
 [Resumo de uma linha — ver abaixo]
 
@@ -143,6 +143,11 @@ RC: Parece que …, poderia verificar por favor?
 
 [explicação]
 RC: Parece que …, poderia verificar por favor?
+
+---
+
+Cobertura: [A] analisados, [G] ignorados por regra ([motivo n, …]), [U] não alcançados ([lista] | nenhum)
+Limites: tipos não verificados (sem typecheck); importadores fora da diff e do espelho de arquivos removidos não verificados[; contexto truncado: <o que ficou de fora>]
 ```
 
 **One-line summary by verdict:**
@@ -151,7 +156,7 @@ RC: Parece que …, poderia verificar por favor?
 - Aprovado com ressalvas → `Nenhum problema bloqueante. [R] ressalva(s) recomendada(s) abaixo.`
 - Reprovado → `[N] problema(s) bloqueante(s) deve(m) ser corrigido(s) antes do merge.`
 
-**Empty sections are omitted**, but the header (verdict, counters, branch line) and both status lines (`IMPORT-CHECK`, `TYPECHECK`) always appear. Status details: TYPECHECK `<N> erros` = errors found (each also a finding); `falhou (config)` = could not run (not a finding); several packages combine per package (`3 erros; falhou (config) em packages/api`). IMPORT-CHECK counts are after dedup, `N = B + R + I`. Ignored files (lockfiles, binaries, generated) are mentioned in one line at the end when present.
+**Empty sections are omitted**, but the header (verdict, counters, PR line, IMPORT-CHECK line) and the closing `Cobertura` and `Limites` lines always appear. IMPORT-CHECK counts come from `fetch-context.mjs` after your self-validation (a finding you discarded is not counted); `N = B + R + I`, `ok` = zero findings. `Cobertura` copies the counts from `fetch-pr.mjs` (`Ignorados`, `Não alcançados`). `Limites` adds `contexto truncado: …` whenever `fetch-context.mjs` printed `fora do teto`, `Espelho truncado` or `Falhas de leitura`.
 
 ## Formatting Rules
 
