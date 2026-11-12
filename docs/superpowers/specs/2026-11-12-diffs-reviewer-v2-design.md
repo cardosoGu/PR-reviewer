@@ -163,13 +163,24 @@ Formato atual de `report.md` (severidades, veredito, RC por achado, dedup/rankin
 
 ## 5. Segurança (contrato read-only)
 
-Comandos permitidos, todos de leitura:
+**Regra: a skill nunca executa nenhuma ação na PR nem no GitHub.** Ela só lê. É proibido comentar, enviar review (aprovar, pedir mudanças, comentar em linha), reagir, editar título/body/labels/reviewers/assignees, marcar como pronta/draft, fechar, reabrir, fazer merge, dar checkout ou disparar workflows, **mesmo que o usuário peça durante a review**. Nesse caso a skill responde que isso está fora do escopo dela e não executa.
 
-- `node <skill>/scripts/fetch-pr.mjs …`, `node <skill>/scripts/fetch-context.mjs …`
-- Dentro dos scripts: `gh pr view`, `gh pr diff`, `gh api` **somente GET** (sem `-X`, `-f`, `-F`, `--input`).
-- Fora dos scripts: leitura de arquivos em `<tmp>/pr-<n>/` e `grep`/`Select-String` sobre eles.
+**Allowlist (fechada — tudo o que não está aqui é proibido):**
 
-Proibido: `gh pr comment|review|merge|edit|close|ready`, `gh api` com método diferente de GET, qualquer comando git que escreva, e escrita fora de `<tmp>/pr-<n>/`. Os scripts validam o link (`https://github.com/<o>/<r>/pull/<n>`) e recusam qualquer outro formato.
+| Quem | Comando permitido |
+| --- | --- |
+| Modelo | `node <skill>/scripts/fetch-pr.mjs <link> [--force]` |
+| Modelo | `node <skill>/scripts/fetch-context.mjs <tmp>/pr-<n> [arquivo ...]` |
+| Modelo | ler arquivos em `<tmp>/pr-<n>/` e `grep`/`Select-String` sobre eles |
+| Scripts | `gh pr view <link> --json …` |
+| Scripts | `gh pr diff <link>` |
+| Scripts | `gh api <endpoint>` **somente GET**, só nos endpoints `repos/{o}/{r}/pulls/{n}/files`, `repos/{o}/{r}/git/trees/{sha}` e `repos/{o}/{r}/contents/{path}?ref={sha}` |
+
+O modelo **nunca chama `gh` ou `git` diretamente** — só através dos dois scripts.
+
+**Garantia no código:** todas as chamadas `gh` dos scripts passam por uma única função (`runGh`) que confere o comando contra a allowlist acima e **lança erro** em qualquer outra coisa: outro subcomando (`gh pr comment`, `gh pr review`, `gh pr checkout`, `gh issue …`, `gh workflow …`, …), flags de escrita em `gh api` (`-X`, `--method`, `-f`, `-F`, `--field`, `--raw-field`, `--input`) ou endpoint fora da lista. Testes unitários cobrem cada caso proibido.
+
+Os scripts também validam o link (`https://github.com/<o>/<r>/pull/<n>`) e recusam qualquer outro formato, e nunca escrevem fora de `<tmp>/pr-<n>/`.
 
 Os scripts não apagam o diretório ao final (permite releitura na mesma sessão); cada execução de `fetch-pr.mjs` recria `<tmp>/pr-<n>` do zero.
 
@@ -191,7 +202,7 @@ Os scripts não apagam o diretório ao final (permite releitura na mesma sessão
 | --- | --- |
 | `scripts/fetch-pr.mjs` | novo |
 | `scripts/fetch-context.mjs` | novo (inclui IMPORT-CHECK) |
-| `SKILL.md` | novo fluxo, entrada por link, contrato de segurança, versão 2.0.0, description atualizada |
+| `SKILL.md` | novo fluxo, entrada por link, contrato de segurança como Critical Rule nº 1 (nenhuma ação na PR, mesmo a pedido; modelo só roda os dois scripts), versão 2.0.0, description atualizada |
 | `references/fetch-diff.md` | reescrito como `references/fetch.md`: como rodar os scripts, ler a saída, estado/`--force` |
 | `references/analyze.md` | §0 vira "ler saída do IMPORT-CHECK"; remove §1 TYPECHECK; duas passadas, autovalidação, não flagar; greps sobre `head/` |
 | `references/standards.md` | peers e docs vêm de `head/` |
@@ -209,7 +220,7 @@ Os scripts não apagam o diretório ao final (permite releitura na mesma sessão
 ## 9. Critérios de aceite
 
 - Review completa com **2 turnos de coleta** (um por script) + leituras de diff/contexto.
-- Nenhuma chamada que escreva no GitHub ou no repo; nada escrito fora de `<tmp>/pr-<n>`.
+- Nenhuma ação na PR nem chamada que escreva no GitHub ou no repo; `runGh` rejeita (com teste) todo comando fora da allowlist; nada escrito fora de `<tmp>/pr-<n>`.
 - PR fechada/mergeada/draft para e pede confirmação.
 - Nenhum diff, tree ou JSON cru no contexto do modelo.
 - Relatório sempre com Cobertura e Limites.
