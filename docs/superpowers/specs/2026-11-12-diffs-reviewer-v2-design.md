@@ -69,7 +69,7 @@ Um turno. Faz em paralelo:
 
 **Estado:** se `state` ≠ `OPEN` ou `isDraft`, o script imprime aviso e sai com **código 2** sem gravar nada. A skill mostra o aviso, **para e pede confirmação**; com "sim", roda de novo com `--force`.
 
-**Diff por arquivo:** grava `<tmp>/pr-<n>/diffs/<caminho>.diff` a partir do `patch`. Se o GitHub omitir o `patch` (arquivo grande), faz um único `gh pr diff <link>` e extrai os blocos faltantes pelo cabeçalho `diff --git`. Se ainda faltar, o arquivo vai para "não alcançados".
+**Diff por arquivo:** grava `<dir>/diffs/<caminho>.diff` a partir do `patch`. Se o GitHub omitir o `patch` (arquivo grande), faz um único `gh pr diff <link>` e extrai os blocos faltantes pelo cabeçalho `diff --git`. Se ainda faltar, o arquivo vai para "não alcançados".
 
 **Exclusões fixas (regra, não julgamento):**
 
@@ -95,12 +95,12 @@ Arquivos (<N> analisados, <X> ignorados, <L> linhas, escopo <S>):
   R src/b.ts ← src/b-old.ts
 Ignorados: <contagem por regra>
 Não alcançados: <lista ou "nenhum">
-Dir: <tmp>/pr-<n>
+Dir: <dir>
 ```
 
-Nada de diff, tree ou JSON cru no stdout. A tree vai para `<tmp>/pr-<n>/tree.txt`; o metadado completo para `<tmp>/pr-<n>/meta.json`.
+Nada de diff, tree ou JSON cru no stdout. A tree vai para `<dir>/tree.txt` (uma linha `caminho<TAB>tamanho` por arquivo); o metadado completo para `<dir>/meta.json`.
 
-`<tmp>` = diretório temporário do SO (`os.tmpdir()`). O script nunca escreve fora de `<tmp>/pr-<n>`.
+`<dir>` = `<os.tmpdir()>/diffs-reviewer/<owner>__<repo>__pr-<n>` (evita colisão entre repos). O script nunca escreve fora de `<dir>`; `fetch-context.mjs` recusa qualquer `<dir>` fora de `<os.tmpdir()>/diffs-reviewer/`.
 
 ### 4.2 Fase 2 — Passada 1 (só diff)
 
@@ -108,9 +108,9 @@ O modelo lê os `.diff` por arquivo, em ordem de risco: rotas/controllers/handle
 
 Ao fim da passada, o modelo monta **uma lista** de contexto necessário (arquivos que a diff chama/usa e que não estão na diff), com teto de 10.
 
-### 4.3 Fase 3 — `node scripts/fetch-context.mjs <tmp>/pr-<n> [arquivo ...]`
+### 4.3 Fase 3 — `node scripts/fetch-context.mjs <dir> [arquivo ...]`
 
-Um turno. Busca em paralelo (concorrência 8) via `gh api repos/{o}/{r}/contents/<path>?ref=<headSha>` com `Accept: application/vnd.github.raw` e grava em `<tmp>/pr-<n>/head/<path>`:
+Um turno. Busca em paralelo (concorrência 8) via `gh api repos/{o}/{r}/contents/<path>?ref=<headSha>` com `Accept: application/vnd.github.raw` e grava em `<dir>/head/<path>`:
 
 1. Os arquivos pedidos pelo modelo (≤10).
 2. `CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md` da raiz e de cada diretório tocado (só os que existem na tree).
@@ -133,7 +133,7 @@ IMPORT-CHECK: <n> imports em <f> arquivos — <b> bloqueantes, <r> ressalvas, <i
   [Bloqueante] src/a.ts:14 — "./utils/fmt" não existe no head (testado: fmt.ts, fmt/index.ts, …)
   [Bloqueante] src/a.ts:15 — "calcTotal" não exportado por src/math.ts
   [Incerto]    src/b.ts:3 — "@/lib/x": alias não resolvido
-Dir: <tmp>/pr-<n>/head
+Dir: <dir>/head
 ```
 
 Só candidatos a problema aparecem; imports confirmados não são listados.
@@ -170,8 +170,8 @@ Formato atual de `report.md` (severidades, veredito, RC por achado, dedup/rankin
 | Quem | Comando permitido |
 | --- | --- |
 | Modelo | `node <skill>/scripts/fetch-pr.mjs <link> [--force]` |
-| Modelo | `node <skill>/scripts/fetch-context.mjs <tmp>/pr-<n> [arquivo ...]` |
-| Modelo | ler arquivos em `<tmp>/pr-<n>/` e `grep`/`Select-String` sobre eles |
+| Modelo | `node <skill>/scripts/fetch-context.mjs <dir> [arquivo ...]` |
+| Modelo | ler arquivos em `<dir>/` e `grep`/`Select-String` sobre eles |
 | Scripts | `gh pr view <link> --json …` |
 | Scripts | `gh pr diff <link>` |
 | Scripts | `gh api <endpoint>` **somente GET**, só nos endpoints `repos/{o}/{r}/pulls/{n}/files`, `repos/{o}/{r}/git/trees/{sha}` e `repos/{o}/{r}/contents/{path}?ref={sha}` |
@@ -180,9 +180,9 @@ O modelo **nunca chama `gh` ou `git` diretamente** — só através dos dois scr
 
 **Garantia no código:** todas as chamadas `gh` dos scripts passam por uma única função (`runGh`) que confere o comando contra a allowlist acima e **lança erro** em qualquer outra coisa: outro subcomando (`gh pr comment`, `gh pr review`, `gh pr checkout`, `gh issue …`, `gh workflow …`, …), flags de escrita em `gh api` (`-X`, `--method`, `-f`, `-F`, `--field`, `--raw-field`, `--input`) ou endpoint fora da lista. Testes unitários cobrem cada caso proibido.
 
-Os scripts também validam o link (`https://github.com/<o>/<r>/pull/<n>`) e recusam qualquer outro formato, e nunca escrevem fora de `<tmp>/pr-<n>/`.
+Os scripts também validam o link (`https://github.com/<o>/<r>/pull/<n>`) e recusam qualquer outro formato, e nunca escrevem fora de `<dir>/`.
 
-Os scripts não apagam o diretório ao final (permite releitura na mesma sessão); cada execução de `fetch-pr.mjs` recria `<tmp>/pr-<n>` do zero.
+Os scripts não apagam o diretório ao final (permite releitura na mesma sessão); cada execução de `fetch-pr.mjs` recria `<dir>` do zero.
 
 ## 6. Tratamento de erros
 
@@ -220,7 +220,7 @@ Os scripts não apagam o diretório ao final (permite releitura na mesma sessão
 ## 9. Critérios de aceite
 
 - Review completa com **2 turnos de coleta** (um por script) + leituras de diff/contexto.
-- Nenhuma ação na PR nem chamada que escreva no GitHub ou no repo; `runGh` rejeita (com teste) todo comando fora da allowlist; nada escrito fora de `<tmp>/pr-<n>`.
+- Nenhuma ação na PR nem chamada que escreva no GitHub ou no repo; `runGh` rejeita (com teste) todo comando fora da allowlist; nada escrito fora de `<dir>`.
 - PR fechada/mergeada/draft para e pede confirmação.
 - Nenhum diff, tree ou JSON cru no contexto do modelo.
 - Relatório sempre com Cobertura e Limites.
