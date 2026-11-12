@@ -1,4 +1,4 @@
-# Spec: diffs-reviewer v1.2
+# Spec: diffs-reviewer v2.0
 
 ## Problem Statement
 
@@ -36,6 +36,18 @@ Spec de design completa: `Specs-Cardoso/skills/diffs-reviewer/2026-11-06-diffs-r
 - **Workers:** sem worker de TYPECHECK (comando em background); ANALYZE workers só a partir de 25 arquivos ou 1500 linhas; IMPORT-CHECK, passada entre lotes e reverificação de Bloqueantes ficam no orquestrador; lotes por módulo; Bloqueante de worker exige evidência.
 - **Teste:** `tests/check-recipes.js` monta um fixture e valida as receitas copiadas do `analyze.md`.
 
+## v2.0 changes
+
+Design completo: `docs/superpowers/specs/2026-11-12-diffs-reviewer-v2-design.md`.
+
+- **Entrada por link da PR**; coleta 100% via `gh` (sem repo local, checkout ou `git fetch`).
+- **Dois scripts Node** (`scripts/fetch-pr.mjs`, `scripts/fetch-context.mjs`) fazem a coleta em 2 turnos, em paralelo; o modelo só analisa.
+- **Somente leitura reforçado**: nenhuma ação na PR, mesmo a pedido; `runGh` aplica allowlist fechada com teste para cada caso proibido.
+- **IMPORT-CHECK** portado para JS dentro de `fetch-context.mjs`; Step D limitado à diff + espelho do módulo.
+- **Removidos**: TYPECHECK, workers, `base=`, review pré-PR.
+- **Análise** em duas passadas (só diff, depois com contexto) + autovalidação obrigatória.
+- **Relatório** com linhas fixas de Cobertura e Limites.
+
 ## Decisions Log
 
 | Decisão | Escolha | Versão |
@@ -68,25 +80,32 @@ Spec de design completa: `Specs-Cardoso/skills/diffs-reviewer/2026-11-06-diffs-r
 | Padrões | 3 peers por trecho em todo escopo; +2 se misto; máx 5; Large até 6 módulos | v1.2 |
 | ANALYZE workers | ≥25 arquivos ou >1500 linhas; lotes por módulo; orquestrador reverifica Bloqueantes | v1.2 |
 | Intenção da PR | Mensagens de commit (últimos 30) usadas na análise de lógica | v1.2 |
+| Fonte da diff | `gh` a partir do link da PR (substitui `git diff base...HEAD`) | v2.0 |
+| gh | Adotado, só leitura, allowlist fechada no código (substitui "descartado") | v2.0 |
+| Coleta | Scripts Node, 2 turnos, chamadas em paralelo | v2.0 |
+| TYPECHECK | Removido | v2.0 |
+| ANALYZE workers | Removidos; agente único em duas passadas | v2.0 |
+| PR fechada/mergeada/draft | Para e pede confirmação (`--force`) | v2.0 |
+| Ações na PR | Proibidas, mesmo a pedido do usuário | v2.0 |
 | Regressão | `tests/check-recipes.js` (fixture + receitas extraídas do texto) | v1.2 |
 
 ## Canonical Rules (must not contradict)
 
 These rules are law. Reference files must align; if conflict, SPEC wins.
 
-1. **TYPECHECK:** never automatic; on request only, background, 120s timeout; script do projeto first, then `tsc -p` / `tsc -b`; never `tsc -- file1 file2`; never build as automatic fallback.
-2. **Diff:** Large PR → hunks per file; never STANDARDS + full diff simultaneously; diff content and line counts only over filtered files.
-3. **TYPECHECK execution:** background shell command, filtered output (no raw log), no worker; `typecheck.md` loaded only on request.
-4. **ANALYZE workers:** never auto — offer-then-confirm at ≥25 files or >1500 diff lines; IMPORT-CHECK and Bloqueante re-verification stay with the orchestrator; platform-agnostic contract.
-5. **Peers:** per module; 3 excerpts baseline; max 5; expand only if dimension ambiguous; never whole files.
-6. **RC:** mandatory on every finding; strict template; user's language.
-7. **Over-engineering:** checklist on every file; graduated severity (see report.md).
-8. **Review:** no early exit — all diff files analyzed.
-9. **Bloqueante:** functional/security/typecheck impact only — never style-only OE.
-10. **IMPORT-CHECK:** always on, all scopes, no checkout; broken import/export/orphan importer → Bloqueante; ambiguity → `[Incerto]`.
-11. **Git:** only network command is `git fetch --no-tags origin <base>`; comparison uses `origin/<base>` when it exists.
-12. **Over-engineering:** no finding without verification evidence.
-13. **Context:** never an unfiltered `git ls-tree -r`; IMPORT-CHECK batched per step, not per import.
+1. **Somente leitura:** nenhuma ação na PR nem no GitHub (comentar, review, reagir, editar, ready/draft, fechar, reabrir, merge, checkout, workflows), mesmo a pedido do usuário.
+2. **Allowlist:** o modelo só roda `scripts/fetch-pr.mjs` e `scripts/fetch-context.mjs` e lê/grepa `<dir>`; nunca chama `gh` ou `git`. Os scripts só usam `gh pr view`, `gh pr diff` e `gh api` GET em três endpoints, via `runGh`.
+3. **Entrada:** link da PR; PR fechada/mergeada/draft → para e pede confirmação (`--force`).
+4. **Diff:** lido um arquivo por vez de `<dir>/diffs/`; nunca a diff inteira no contexto; contagem de linhas só sobre arquivos não ignorados.
+5. **Peers:** por módulo, a partir do espelho em `<dir>/head/`; 3 trechos de base; máx 5; nunca arquivos inteiros.
+6. **RC:** obrigatório em todo achado; template fixo; idioma do usuário.
+7. **Over-engineering:** checklist em todo arquivo; severidade graduada; sem evidência, sem achado; export público sem referência no espelho → no máximo Sugestão `[Incerto]`.
+8. **Review:** sem early exit — todos os arquivos relevantes analisados nas duas passadas.
+9. **Bloqueante:** só impacto funcional, de segurança ou de build — nunca OE só de estilo.
+10. **IMPORT-CHECK:** sempre ligado, determinístico, no `fetch-context.mjs`; import/export quebrado ou arquivo removido ainda importado → Bloqueante; ambiguidade → `[Incerto]`.
+11. **Autovalidação:** todo achado relido e confirmado (existe, ocorre como escrito, é novo) antes do relatório.
+12. **Linhas:** sempre calculadas do `@@` ou do arquivo em `<dir>/head/`, nunca estimadas.
+13. **Relatório:** sempre com as linhas `Cobertura` e `Limites`.
 
 ## File Structure
 
@@ -94,17 +113,19 @@ These rules are law. Reference files must align; if conflict, SPEC wins.
 diffs-reviewer/
 ├── SKILL.md
 ├── SPEC.md
+├── README.md
 ├── .skill-meta.json
+├── scripts/
+│   ├── fetch-pr.mjs          (fase 1)
+│   ├── fetch-context.mjs     (fase 3 + IMPORT-CHECK)
+│   └── lib/                  (gh, workdir, diff, filter, imports, resolve, exports, select)
 ├── references/
-│   ├── fetch-diff.md
-│   ├── standards.md
+│   ├── fetch.md
 │   ├── analyze.md
-│   ├── typecheck.md      (só sob pedido)
-│   ├── report.md         (VERDICT + REPORT)
-│   └── sub-agents.md     (só PRs muito grandes)
-└── tests/
-    ├── check-recipes.js
-    └── expected-review.md
+│   ├── standards.md
+│   └── report.md             (VERDICT + REPORT)
+├── tests/                    (node --test "tests/*.test.mjs")
+└── docs/superpowers/         (spec e plano da v2)
 ```
 
 ## Verdict Model
@@ -117,58 +138,40 @@ diffs-reviewer/
 
 ## Out of Scope
 
-- Integração GitHub
-- Integração gh (descartada em v1.1)
-- ESLint automático
+- Qualquer escrita no GitHub (comentários, reviews, edição da PR)
+- Review sem PR (diff local / pré-PR)
+- TYPECHECK e ESLint
+- Workers / revisores paralelos (`--deep` fica para o futuro)
 - Regras de domínio
 - Cache de padrões entre execuções
-- `.reviewrc` config file
-- Diff uncommitted (staged/unstaged)
 
-## v2 Roadmap
+## Roadmap
 
-- Modo diff uncommitted / full
-- TYPECHECK multi-stack (Go, Rust, Python)
+- `--deep`: revisores paralelos + validação por subagente para PR crítica
+- IMPORT-CHECK para outras linguagens
 - Regras de domínio inline ou via spec file
 - Eixo Spec (issue/PRD vs código)
 
 ## Testing Checklist
 
-- [ ] Auto-detect base em repo com main
-- [ ] Override soft `base=develop`
-- [ ] Branch main vs main → aviso correto
-- [ ] TYPECHECK via script do projeto (ex.: `npm run typecheck`) (sob pedido)
-- [ ] TYPECHECK monorepo via `tsc -b` no package afetado (sob pedido)
-- [ ] TYPECHECK skip quando sem tsconfig/script (sob pedido)
-- [ ] PR com 30 arquivos → oferta de ANALYZE workers (avisa custo); PR com 14 arquivos → sem oferta
-- [ ] Lockfile grande no diff não muda o escopo
-- [ ] `node tests/check-recipes.js` → ALL PASS
-- [ ] Large PR → hunks por arquivo, não diff completo em STANDARDS
-- [ ] Docs em `.cursor/rules/` detectados
-- [ ] Inferência por módulo; expansão peers se ambíguo
-- [ ] Over-engineering: plugin duplicado → Ressalva + RC
-- [ ] Import inexistente → Bloqueante + RC template
+- [ ] `node --test "tests/*.test.mjs"` → todos passam
+- [ ] PR aberta → coleta; PR mergeada/fechada/draft → para com código 2; `--force` continua
+- [ ] Link inválido ou `gh` sem auth → mensagem curta, código 1
+- [ ] Tentativa de `gh pr comment` / `review` / `merge` → bloqueada por `runGh`
+- [ ] Pedido do usuário para comentar/aprovar durante a review → recusado
+- [ ] Lockfile, i18n JSON e `.md` não entram na contagem nem na análise
+- [ ] Arquivo sem `patch` na API → vem do `gh pr diff`; se falhar, aparece em `Não alcançados`
+- [ ] Import relativo inexistente → Bloqueante com evidência
+- [ ] Alias de `tsconfig.paths` (com `extends`) resolvido
+- [ ] Convenção ESM `./x.js` resolve para `x.ts`
+- [ ] Export nomeado inexistente → Bloqueante; `export *` / CommonJS → `[Incerto]`
+- [ ] Arquivo removido ainda importado (diff ou espelho) → Bloqueante
+- [ ] Pacote externo não declarado → Ressalva (`[Incerto]` em monorepo)
+- [ ] Import escrito dentro de string não vira achado
+- [ ] Docs de padrões e espelho do módulo baixados para `<dir>/head/`
+- [ ] Over-engineering: plugin duplicado → Ressalva com trecho da base
+- [ ] Achado que falha a autovalidação → descartado
 - [ ] RC presente em bloqueantes, ressalvas e sugestões
 - [ ] Bloqueante → Reprovado (nunca ressalvas)
-- [ ] Review completa com bloqueante no 1º arquivo (sem early exit)
-- [ ] Progresso por fases exibido
-- [ ] Idioma segue usuário (RC PT ou EN)
-- [ ] ANALYZE workers: pergunta antes; declina → sequencial
-- [ ] Import relativo inexistente → Bloqueante + RC com evidência
-- [ ] Import com alias de `tsconfig.paths` resolvido corretamente (existente e inexistente)
-- [ ] Convenção ESM `./x.js` resolve para `x.ts`
-- [ ] Export nomeado inexistente em módulo local → Bloqueante
-- [ ] `export *` encadeado / resolução ambígua → `[Incerto]`, não Bloqueante
-- [ ] Arquivo deletado ainda importado → Reprovado com lista de importadores
-- [ ] Pacote externo novo ausente do `package.json` → achado
-- [ ] Monorepo: alias e `package.json` do package correto
-- [ ] TYPECHECK não roda por padrão; relatório mostra `não solicitado`
-- [ ] TYPECHECK solicitado: roda em background; estouro de 120s gera aviso e review continua
-- [ ] `origin/<base>` usada quando existe; fallback para base local sem remoto
-- [ ] Fetch falha (offline) → aviso de ref possivelmente velha, review prossegue
-- [ ] Nenhum `pull`/`checkout`/`fetch` fora de `git fetch --no-tags origin <base>`
-- [ ] Dead code: export novo sem referências → Ressalva com grep no RC
-- [ ] Duplicated infra: plugin já na base → Ressalva com trecho da base
-- [ ] Sinal de OE sem confirmação → não reportado
-- [ ] Repo grande: greps restritos ao módulo, review conclui em tempo razoável
-- [ ] Monorepo: nenhuma listagem completa de arquivos aparece no contexto
+- [ ] Relatório com `Cobertura` e `Limites`
+- [ ] Progresso por fases; idioma segue o usuário

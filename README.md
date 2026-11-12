@@ -1,22 +1,20 @@
 # diffs-reviewer
 
-**Skill focada na review de PR local sem integração com o github.**
-
-
+**Review de PR do GitHub a partir do link, somente leitura.**
 
 ---
 
-Skill para o Cursor Agent que revisa o diff da branch atual contra a base (`git diff base...HEAD`). Roda no repo aberto, usa só comandos git de leitura e **não altera código**.
+Skill que revisa uma PR do GitHub pelo link. Coleta tudo via `gh` com dois scripts Node e **nunca age na PR**: não comenta, não envia review, não altera nada — mesmo que você peça durante a review.
 
-No final: **veredito** + relatório com comentários **RC** prontos para colar no PR.
+No final: **veredito** + relatório com comentários **RC** prontos para colar na PR.
 
 ```mermaid
 flowchart LR
-    GIT["git diff base...HEAD"] --> A["① FETCH"]
-    A --> B["② STANDARDS"]
-    B --> C["③ ANALYZE"]
-    C --> D["④ VERDICT"]
-    D --> E["⑤ REPORT"]
+    LINK["link da PR"] --> A["① FETCH<br/>fetch-pr.mjs"]
+    A --> B["② PASSADA 1<br/>só a diff"]
+    B --> C["③ CONTEXTO<br/>fetch-context.mjs"]
+    C --> D["④ PASSADA 2<br/>contexto + autovalidação"]
+    D --> E["⑤ VERDICT + REPORT"]
     E --> OUT["Veredito + RC"]
 ```
 
@@ -28,37 +26,46 @@ Progresso: `[Fase 1/5]` … `[Fase 5/5]`
 
 | Fase | Função |
 |------|--------|
-| **FETCH** | Resolve base (origin/<base>), faz fetch restrito, filtra lockfiles/gerados, lê a intenção dos commits, classifica tamanho |
-| **STANDARDS** | Carrega regras documentadas + convenções do módulo |
-| **ANALYZE** | IMPORT-CHECK em lote, lógica, intenção da PR, segurança, over-engineering com evidência (typecheck sob pedido) |
-| **VERDICT + REPORT** | Classifica achados, emite veredito e RC em todo achado |
+| **FETCH** | `fetch-pr.mjs`: metadados, intent (body da PR), diff por arquivo, árvore do repo, exclusões fixas, escopo. PR fechada/mergeada/draft → para e pede confirmação |
+| **PASSADA 1** | Só a diff: lógica, intenção, segurança, tipos evidentes |
+| **CONTEXTO** | `fetch-context.mjs`: até 10 arquivos pedidos, docs de padrões, espelho do módulo, **IMPORT-CHECK** determinístico |
+| **PASSADA 2** | Padrões, over-engineering com evidência, rastreio de contexto, **autovalidação** de cada achado |
+| **VERDICT + REPORT** | Veredito, RC em todo achado, linhas de Cobertura e Limites |
 
 ---
+
+## Requisitos
+
+- [GitHub CLI](https://cli.github.com/) ≥ 2.48, autenticado (`gh auth login`) com acesso de leitura ao repo da PR
+- Node ≥ 18
 
 ## Instalar
 
 ```bash
-git clone https://github.com/cardo/diffs-reviewer.git ~/.cursor/skills/diffs-reviewer
+git clone https://github.com/cardosoGu/diffs-reviewer.git ~/.cursor/skills/diffs-reviewer
 ```
 
 Windows: `$env:USERPROFILE\.cursor\skills\diffs-reviewer`
 
-Abra o **repo a revisar** no Cursor. Invocação **manual** — não roda sozinha.
+Invocação **manual** — não roda sozinha. Não precisa ter o repo da PR aberto.
 
 ---
 
 ## Usar
 
 ```
-/diffs-reviewer
-/diffs-reviewer base=develop
+/diffs-reviewer https://github.com/<owner>/<repo>/pull/<n>
 ```
 
-Também: `Revisar PR` · `review de código` · `analisar diff`
+Também: `revisar PR <link>` · `revisar só segurança <link>` · `revisar padrões <link>`
 
-Base auto: `main` → `master` → `origin/HEAD`. Override: `base=<branch>`.
-Faz fetch e compara com `origin/<base>` (não precisa dar pull); o único comando de rede é `git fetch --no-tags origin <base>`.
-Typecheck completo: peça explicitamente ("rodar typecheck") — roda em background, timeout de 120s, saída filtrada aos arquivos do diff.
+---
+
+## Segurança
+
+- O modelo só roda os dois scripts e lê os arquivos que eles gravam numa pasta temporária.
+- Os scripts só chamam `gh pr view`, `gh pr diff` e `gh api` com GET em três endpoints (arquivos da PR, árvore, conteúdo de arquivo). Uma função única (`runGh`) recusa qualquer outro comando ou flag de escrita, com teste para cada caso.
+- Nada é escrito fora de `<tmp>/diffs-reviewer/<owner>__<repo>__pr-<n>`.
 
 ---
 
@@ -72,21 +79,18 @@ Typecheck completo: peça explicitamente ("rodar typecheck") — roda em backgro
 | ⚠️ | **Aprovado com ressalvas** | 0 bloqueantes, 1+ ressalvas |
 | ❌ | **Reprovado** | 1+ bloqueantes |
 
-Bloqueante → sempre **Reprovado** (nunca ressalvas).
-
 ### RC
 
 ```
 RC: Parece que [observação concreta], poderia verificar por favor?
 ```
 
-Todo achado traz **RC** pronto. Idioma segue a conversa.
+Todo achado traz **RC** pronto. Idioma segue a conversa. O relatório termina com:
 
-| Seção | Conteúdo |
-|-------|----------|
-| **Bloqueantes** | Erros de tipo, bugs de lógica, vulnerabilidades |
-| **Ressalvas** | Over-engineering, inconsistência de padrão |
-| **Sugestões** | Melhorias opcionais de legibilidade ou design |
+```
+Cobertura: 12 analisados, 30 ignorados por regra (i18n 20, docs 10), 0 não alcançados
+Limites: tipos não verificados (sem typecheck); importadores fora da diff e do espelho de arquivos removidos não verificados
+```
 
 ---
 
@@ -94,46 +98,44 @@ Todo achado traz **RC** pronto. Idioma segue a conversa.
 
 | Eixo | Detecta |
 |------|---------|
-| **IMPORT-CHECK** | Import/export inexistente, arquivo removido ainda importado, pacote não declarado *(sempre)* |
-| **TYPECHECK** | *Opt-in:* script do projeto → `tsc -p` / `tsc -b` por package |
-| **Lógica** | Condições erradas, null unsafe, race, validação bypassável |
-| **Segurança** | Injection, XSS, secrets, auth ausente |
-| **Padrões** | `.cursor/rules/`, `CONTRIBUTING.md`, convenções do módulo |
+| **IMPORT-CHECK** | Caminho inexistente, export nomeado inexistente, arquivo removido ainda importado, pacote não declarado *(sempre, determinístico)* |
+| **Lógica** | Condições erradas, null unsafe, race, validação bypassável, divergência com a intenção da PR |
+| **Segurança** | Injection, XSS, secrets, auth ausente, assinatura de webhook |
+| **Padrões** | `CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`, `.cursor/rules/`, convenções do módulo |
 | **Over-engineering** | Abstração morta, plugin duplicado, middle man — com evidência *(sempre)* |
 
-TYPECHECK (sob pedido): **script** → **tsc por package** → **skip** (com nota).
+Não roda typecheck nem linter: erros de tipo só quando evidentes na leitura (aparece em `Limites`).
 
 ---
 
-## Escala adaptativa
+## Escopo
 
-| Scope | PR | Comportamento |
-|-------|-----|---------------|
-| **Small** | ≤3 arquivos, ≤100 linhas | Agente único, diff completo |
-| **Medium** | entre Small e Large | Agente único; hunks se >400 linhas |
-| **Large** | 11+ ou >500 linhas | Agente único, hunks por arquivo |
+| Escopo | PR | Efeito |
+|--------|-----|--------|
+| **Small** | ≤3 arquivos, ≤100 linhas | STANDARDS leve |
+| **Medium** | entre Small e Large | — |
+| **Large** | 11+ ou >500 linhas | inferência de padrões em até 6 módulos |
 
-Linhas contadas só nos arquivos filtrados (lockfiles não contam).
-
-**Workers ANALYZE** só em PRs muito grandes (≥25 arquivos ou >1500 linhas), com confirmação: ficam mais rápidos, mas gastam mais tokens. IMPORT-CHECK e a reverificação de bloqueantes ficam sempre no agente principal.
+Sempre agente único; linhas contadas só nos arquivos que não foram ignorados.
 
 ---
 
 ## Testes
 
 ```bash
-node tests/check-recipes.js
+node --test "tests/*.test.mjs"
 ```
 
-Monta um repo temporário com problemas plantados e valida as receitas do `analyze.md` (copiadas do próprio texto). `--keep` mantém o fixture para um smoke test manual; resultado esperado em `tests/expected-review.md`.
+Sem rede: o `gh` é substituído por respostas simuladas. Cobrem a allowlist (inclusive cada ação proibida), parsing de diff, exclusões, extração e resolução de imports, exports e os dois scripts de ponta a ponta.
 
 ---
 
 ## Changelog
 
-- **1.2.0** — menos tokens e menos comandos: IMPORT-CHECK em lote, `ls-tree` sempre filtrado, TYPECHECK em arquivo próprio (só sob pedido) e sem worker, VERDICT+REPORT num arquivo, peers por trecho, lockfiles fora da contagem. Qualidade: intenção da PR via commits, inferência coerente em Small, allowlist única, trigger removido, workers só em PRs muito grandes com reverificação de bloqueantes. Teste de regressão `tests/check-recipes.js`.
-- **1.1.1** — greps de símbolo seguros para nomes com `$`; `export type { } from` coberto no IMPORT-CHECK; contagem do IMPORT-CHECK definida (pós-dedup, N = B + R + I); TYPECHECK combina erros e falha de config por package.
-- **1.1.0** — IMPORT-CHECK determinístico; TYPECHECK opt-in; over-engineering com verificação ativa; comparação com `origin/<base>` e `git fetch --no-tags origin <base>` restrito.
+- **2.0.0** — review de PR pelo link, coleta via `gh` em dois scripts Node (2 turnos, chamadas em paralelo), IMPORT-CHECK portado para JS, análise em duas passadas com autovalidação, relatório com Cobertura e Limites. Proibida qualquer ação na PR, com allowlist no código. Removidos: TYPECHECK, workers, fluxo `git fetch`/`git diff`, `base=`.
+- **1.2.0** — menos tokens e menos comandos: IMPORT-CHECK em lote, TYPECHECK só sob pedido, workers só em PRs muito grandes, teste de regressão `tests/check-recipes.js`.
+- **1.1.1** — greps de símbolo seguros para nomes com `$`; `export type { } from` coberto no IMPORT-CHECK.
+- **1.1.0** — IMPORT-CHECK determinístico; TYPECHECK opt-in; over-engineering com verificação ativa.
 - **1.0.0** — versão inicial.
 
 ---
